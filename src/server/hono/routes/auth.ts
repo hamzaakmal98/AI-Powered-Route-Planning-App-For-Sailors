@@ -7,7 +7,7 @@ import bcrypt from "bcryptjs";
 import {createToken} from "@/lib/jwt";
 import {oauthClients, OAuthScenario} from "@/lib/oauth-client";
 import type {OAuthProvider} from "@/lib/oauth/providers/base";
-import {AccountProvider} from "@/generated/prisma/enums";
+import {AccountProvider} from "@prisma/client";
 import {env} from 'hono/adapter'
 
 export const signInSchema = z.object({
