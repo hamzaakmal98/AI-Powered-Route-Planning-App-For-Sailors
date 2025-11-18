@@ -9,6 +9,7 @@ import {oauthClients, OAuthScenario} from "@/lib/oauth-client";
 import type {OAuthProvider} from "@/lib/oauth/providers/base";
 import {AccountProvider} from "@prisma/client";
 import {env} from 'hono/adapter'
+import {SetAuthCookie} from "@/server/hono/routes/utils";
 
 export const signInSchema = z.object({
   email: z.email("Invalid email address"),
@@ -95,6 +96,9 @@ const app = new Hono()
 
     // If user exists, redirect to the dashboard
     if (user) {
+      // Update JWT token and set cookie
+      await SetAuthCookie(c, user!.id);
+
       return c.redirect("/dashboard");
     }
 
@@ -137,14 +141,7 @@ const app = new Hono()
     }
 
     // Create JWT token and set cookie
-    const jwtToken = await createToken(user!.id);
-    const {JWT_COOKIE_NAME} = env<{ JWT_COOKIE_NAME: string }>(c);
-
-    setCookie(c, JWT_COOKIE_NAME, jwtToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "Lax",
-    });
+    await SetAuthCookie(c, user!.id);
 
     return c.redirect("/dashboard");
   });
