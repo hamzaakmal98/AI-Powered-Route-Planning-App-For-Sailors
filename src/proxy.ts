@@ -21,8 +21,7 @@ const authRoutes = [
 ];
 
 /**
- * The prefix for API authentication routes
- * Routes that start with this prefix are used for API authentication.
+ * Routes that start with this prefix are used for API authentication. We need to skip them in proxy.
  */
 const apiAuthPrefix = "/api/auth";
 
@@ -39,7 +38,7 @@ async function checkLoggedIn(req: NextRequest) {
   }
 }
 
-export default async function middleware(req: NextRequest) {
+export default async function proxy(req: NextRequest) {
   const { nextUrl } = req;
   const isLoggedIn = await checkLoggedIn(req);
 

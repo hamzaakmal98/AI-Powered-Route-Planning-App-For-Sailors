@@ -3,23 +3,18 @@ import {env} from "hono/adapter";
 import {getCookie} from "hono/cookie";
 import {prisma} from "@/lib/prisma";
 import {verifyToken} from "@/lib/jwt";
+import {ExtractUserIdFromCookie} from "@/server/hono/routes/utils";
 
 let app = new Hono()
 
 app = app.get("/user", async (c) => {
-  const {JWT_COOKIE_NAME} = env<{ JWT_COOKIE_NAME: string }>(c);
-  const jwtCookie = getCookie(c, JWT_COOKIE_NAME);
-  if (!jwtCookie) {
-    return c.text("Unauthorized", 401)
-  }
-
-  const payload = await verifyToken(jwtCookie)
-  if (!payload) {
+  const userId = await ExtractUserIdFromCookie(c)
+  if (!userId) {
     return c.text("Unauthorized", 401)
   }
 
   const user = await prisma.user.findUnique({
-    where: {id: payload.userId}
+    where: {id: userId}
   })
 
   if (!user) {
