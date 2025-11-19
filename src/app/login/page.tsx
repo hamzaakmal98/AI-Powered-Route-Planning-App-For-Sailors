@@ -39,8 +39,18 @@ export default function LoginPage() {
         if (!response.ok || ('error' in result && result.error)) {
           setError(('error' in result ? result.error : undefined) || "Something went wrong");
         } else {
-          // Redirect to dashboard on success
-          router.push("/dashboard");
+          // Check onboarding status and redirect accordingly
+          try {
+            const userResponse = await honoClient.api.user.$get();
+            if (userResponse.ok) {
+              const user = await userResponse.json();
+              router.push(user.onboarded ? "/dashboard" : "/onboarding");
+            } else {
+              router.push("/dashboard");
+            }
+          } catch {
+            router.push("/dashboard");
+          }
         }
       } catch (err) {
         setError("Failed to connect to server. Please try again.");

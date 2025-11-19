@@ -11,7 +11,7 @@ const app = new Hono()
   .get('/ping', (c) => {
     return c.text("pong")
   })
-  .route("/users", userRoutes)
+  .route("/user", userRoutes)
   .route("/auth", authRoutes)
 
 export default app;

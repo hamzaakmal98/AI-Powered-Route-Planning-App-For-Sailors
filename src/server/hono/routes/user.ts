@@ -1,31 +1,47 @@
 import {Hono} from 'hono'
-import {env} from "hono/adapter";
-import {getCookie} from "hono/cookie";
 import {prisma} from "@/lib/prisma";
-import {verifyToken} from "@/lib/jwt";
 import {ExtractUserIdFromCookie} from "@/server/hono/routes/utils";
 
-let app = new Hono()
+const app = new Hono()
+  .get("/", async (c) => {
+    const userId = await ExtractUserIdFromCookie(c)
+    if (!userId) {
+      return c.text("Unauthorized", 401)
+    }
 
-app = app.get("/user", async (c) => {
-  const userId = await ExtractUserIdFromCookie(c)
-  if (!userId) {
-    return c.text("Unauthorized", 401)
-  }
+    const user = await prisma.user.findUnique({
+      where: {id: userId}
+    })
 
-  const user = await prisma.user.findUnique({
-    where: {id: userId}
+    if (!user) {
+      return c.text("Unauthorized", 401)
+    }
+
+    return c.json({
+      id: user?.id,
+      email: user?.email,
+      name: user?.name,
+      onboarded: user?.onboarded,
+    })
   })
 
-  if (!user) {
-    return c.text("Unauthorized", 401)
-  }
+  .post("/onboarded", async (c) => {
+    const userId = await ExtractUserIdFromCookie(c)
+    if (!userId) {
+      return c.text("Unauthorized", 401)
+    }
 
-  return c.json({
-    id: user?.id,
-    email: user?.email,
-    name: user?.name,
+    try {
+      const user = await prisma.user.update({
+        where: {id: userId},
+        data: {onboarded: true},
+      })
+
+      return c.json({success: true, onboarded: user.onboarded})
+    } catch (error) {
+      console.error("Error updating onboarded status:", error)
+      return c.json({error: "Failed to update onboarding status"}, 500)
+    }
   })
-})
 
 export default app

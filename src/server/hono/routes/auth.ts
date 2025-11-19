@@ -94,12 +94,12 @@ const app = new Hono()
       where: {email: userProfile.email},
     });
 
-    // If user exists, redirect to the dashboard
+    // If user exists, redirect based on onboarding status
     if (user) {
       // Update JWT token and set cookie
       await SetAuthCookie(c, user!.id);
 
-      return c.redirect("/dashboard");
+      return c.redirect(user.onboarded ? "/dashboard" : "/onboarding");
     }
 
     // If user doesn't exist, create new user
@@ -143,7 +143,8 @@ const app = new Hono()
     // Create JWT token and set cookie
     await SetAuthCookie(c, user!.id);
 
-    return c.redirect("/dashboard");
+    // New users should go through onboarding
+    return c.redirect("/onboarding");
   });
 
 export default app;

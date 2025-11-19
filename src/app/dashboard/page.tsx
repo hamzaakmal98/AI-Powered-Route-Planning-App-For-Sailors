@@ -1,8 +1,13 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
+import { honoClient } from "@/lib/hono-client";
 import {
   Anchor,
   Compass,
@@ -25,10 +30,45 @@ import {
   Camera,
   User,
   Settings,
-  LogOut
+  LogOut,
+  Loader2
 } from "lucide-react";
 
 export default function DashboardPage() {
+  const router = useRouter();
+  const [isChecking, setIsChecking] = useState(true);
+
+  useEffect(() => {
+    const checkOnboarding = async () => {
+      try {
+        const response = await honoClient.api.user.$get();
+        if (response.ok) {
+          const user = await response.json();
+          if (!user.onboarded) {
+            router.push('/onboarding');
+            return;
+          }
+        }
+      } catch (error) {
+        console.error('Error checking onboarding status:', error);
+      } finally {
+        setIsChecking(false);
+      }
+    };
+
+    checkOnboarding();
+  }, [router]);
+
+  if (isChecking) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
   // Mock data - in real app this would come from API/state
   const nextPriorities = [
     {
@@ -175,6 +215,7 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
         </div>
+
 
         {/* Next 3-5 Priorities Section */}
         <section className="mb-8">

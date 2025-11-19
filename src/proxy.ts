@@ -21,6 +21,13 @@ const authRoutes = [
 ];
 
 /**
+ * Routes that logged-in users can access (like onboarding)
+ */
+const loggedInRoutes = [
+  "/onboarding",
+];
+
+/**
  * Routes that start with this prefix are used for API authentication. We need to skip them in proxy.
  */
 const apiAuthPrefix = "/api/auth";
@@ -45,6 +52,7 @@ export default async function proxy(req: NextRequest) {
   const isApiAuthRoute = nextUrl.pathname.startsWith(apiAuthPrefix);
   const isPublicRoute = publicRoutes.includes(nextUrl.pathname);
   const isAuthRoute = authRoutes.includes(nextUrl.pathname);
+  const isLoggedInRoute = loggedInRoutes.includes(nextUrl.pathname);
 
   if (isApiAuthRoute) {
     return;
@@ -57,7 +65,12 @@ export default async function proxy(req: NextRequest) {
     return;
   }
 
-  if (!isLoggedIn && !isPublicRoute) {
+  // Allow logged-in routes for authenticated users
+  if (isLoggedInRoute && isLoggedIn) {
+    return;
+  }
+
+  if (!isLoggedIn && !isPublicRoute && !isLoggedInRoute) {
     return Response.redirect(new URL("/login", nextUrl))
   }
 

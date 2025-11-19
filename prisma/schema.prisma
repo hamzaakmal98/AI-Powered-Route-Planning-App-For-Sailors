@@ -20,6 +20,7 @@ model User {
   email     String   @unique
   name      String?
   password  String? // Hashed password for email/password authentication
+  onboarded Boolean  @default(false)
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
