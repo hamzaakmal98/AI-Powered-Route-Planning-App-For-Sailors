@@ -1,11 +1,12 @@
 'use client';
 
-import { useChat } from '@ai-sdk/react';
-import { DefaultChatTransport } from 'ai';
-import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import {useChat} from '@ai-sdk/react';
+import {DefaultChatTransport} from 'ai';
+import {useCallback, useEffect, useRef, useState} from 'react';
+import {useRouter} from 'next/navigation';
 
-import { FormType } from '@/app/api/onboarding/schema';
+import {FormType} from '@/app/api/onboarding/schema';
+import {honoClient} from '@/lib/hono-client';
 import {
   BoatInfoForm,
   ConcernsForm,
@@ -25,8 +26,8 @@ import {
   MessageContent,
   MessageResponse,
 } from '@/components/ai-elements/message';
-import { Loader } from '@/components/ai-elements/loader';
-import { Button } from '@/components/ui/button';
+import {Loader} from '@/components/ai-elements/loader';
+import {Button} from '@/components/ui/button';
 
 const FORM_COMPONENTS: Record<FormType, React.FC<OnboardingFormProps<any>>> = {
   boat_info: BoatInfoForm,
@@ -41,48 +42,48 @@ const FORM_SUMMARIES: Record<FormType, { title: string; fields: Array<{ name: st
   boat_info: {
     title: 'Boat details',
     fields: [
-      { name: 'boatType', label: 'Boat type' },
-      { name: 'boatLength', label: 'Length (ft)' },
-      { name: 'boatName', label: 'Name' },
+      {name: 'boatType', label: 'Boat type'},
+      {name: 'boatLength', label: 'Length (ft)'},
+      {name: 'boatName', label: 'Name'},
     ],
   },
   sailing_experience: {
     title: 'Experience snapshot',
     fields: [
-      { name: 'experienceLevel', label: 'Experience level' },
-      { name: 'certifications', label: 'Certifications' },
-      { name: 'mechanicalSkills', label: 'Mechanical skills' },
-      { name: 'longestPassage', label: 'Longest passage' },
+      {name: 'experienceLevel', label: 'Experience level'},
+      {name: 'certifications', label: 'Certifications'},
+      {name: 'mechanicalSkills', label: 'Mechanical skills'},
+      {name: 'longestPassage', label: 'Longest passage'},
     ],
   },
   journey_plan: {
     title: 'Journey plan',
     fields: [
-      { name: 'journeyType', label: 'Journey type' },
-      { name: 'primaryDestination', label: 'Primary destination' },
-      { name: 'journeyDuration', label: 'Duration' },
+      {name: 'journeyType', label: 'Journey type'},
+      {name: 'primaryDestination', label: 'Primary destination'},
+      {name: 'journeyDuration', label: 'Duration'},
     ],
   },
   timeline: {
     title: 'Timeline & readiness',
     fields: [
-      { name: 'departureDate', label: 'Departure date' },
-      { name: 'preparationTimeline', label: 'Prep window' },
-      { name: 'currentPreparationStatus', label: 'Status' },
+      {name: 'departureDate', label: 'Departure date'},
+      {name: 'preparationTimeline', label: 'Prep window'},
+      {name: 'currentPreparationStatus', label: 'Status'},
     ],
   },
   goals_priorities: {
     title: 'Goals & priorities',
     fields: [
-      { name: 'primaryGoals', label: 'Primary goals' },
-      { name: 'biggestChallenge', label: 'Biggest challenge' },
+      {name: 'primaryGoals', label: 'Primary goals'},
+      {name: 'biggestChallenge', label: 'Biggest challenge'},
     ],
   },
   concerns_challenges: {
     title: 'Concerns',
     fields: [
-      { name: 'mainConcerns', label: 'Top concerns' },
-      { name: 'additionalConcerns', label: 'Extra notes' },
+      {name: 'mainConcerns', label: 'Top concerns'},
+      {name: 'additionalConcerns', label: 'Extra notes'},
     ],
   },
 };
@@ -91,83 +92,112 @@ export default function OnboardingPage() {
   const router = useRouter();
   const [collectedData, setCollectedData] = useState<Record<string, any>>({});
   const [currentFormType, setCurrentFormType] = useState<FormType | null>(null);
-  const [isComplete, setIsComplete] = useState(false);
+  const [isOnboardingComplete, setIsOnboardingComplete] = useState(false);
+  const [onboardingError, setOnboardingError] = useState<string | null>(null);
 
-  const { messages, sendMessage, status, error, stop } = useChat({
+  const collectedDataRef = useRef(collectedData);
+  useEffect(() => {
+    collectedDataRef.current = collectedData;
+  }, [collectedData]);
+
+  const {messages, sendMessage, status, error, /*stop*/} = useChat({
     transport: new DefaultChatTransport({
       api: '/api/onboarding',
     }),
   });
 
-  // Parse messages for form type and completion status
+  /**
+   * Marks the user as onboarded by sending their collected onboarding form data
+   * to the server. If successful, marks the onboarding as complete and redirects
+   * the user to the dashboard. Handles and displays errors if the process fails.
+   *
+   * @param formValues - The values collected from all onboarding forms.
+   */
+  const markAsOnboarded = useCallback(
+    async (formValues: Record<string, any>) => {
+      try {
+        setOnboardingError(null);
+        const response = await honoClient.api.user.onboarded.$post({
+          json: {formsData: formValues},
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to update onboarding status');
+        }
+
+        setIsOnboardingComplete(true);
+        setTimeout(() => router.push('/dashboard'), 1000);
+      } catch (err) {
+        console.error('Error marking as onboarded:', err);
+        setOnboardingError('Unable to finish onboarding right now. Please try again.');
+      }
+    },
+    [router],
+  );
+
+  // Parse messages to get form type and completion status
   useEffect(() => {
+    if (isOnboardingComplete) {
+      return;
+    }
+
     // Check all assistant messages, starting from the most recent
     for (let i = messages.length - 1; i >= 0; i--) {
       const message = messages[i];
+      if (i == messages.length-1) console.log(message);
       if (message && message.role === 'assistant') {
         // Extract text from message parts
         const textParts = message.parts?.filter((part: any) => part.type === 'text') || [];
         const fullText = textParts.map((part: any) => part.text).join('');
 
         // Try to parse JSON from anywhere in the message (not just the end)
-        // Look for JSON objects in the text
-        const jsonMatch = fullText.match(/\{[\s\S]*"formType"[\s\S]*\}/);
+        // Look for JSON objects that contain either "formType" or "action" (for completion)
+        let jsonMatch = fullText.match(/\{[\s\S]*"(?:formType|action)"[\s\S]*\}/);
+        
+        // If no match found, try checking the last line (common pattern for AI responses)
+        if (!jsonMatch) {
+          const lines = fullText.split('\n');
+          const lastLine = lines[lines.length - 1]?.trim();
+          if (lastLine && lastLine.startsWith('{') && lastLine.endsWith('}')) {
+            jsonMatch = [lastLine];
+          }
+        }
+        
+        if (i == messages.length-1) console.log(jsonMatch);
         if (jsonMatch) {
           try {
-            const metadata = JSON.parse(jsonMatch[0]);
-            if (metadata.action === 'showForm' && metadata.formType) {
-              console.log('Setting form type:', metadata.formType);
-              setCurrentFormType(metadata.formType as FormType);
+            const jsonData = JSON.parse(jsonMatch[0]);
+            console.log(jsonData);
+            if (jsonData.action === 'showForm' && jsonData.formType) {
+              console.log('Setting form type:', jsonData.formType);
+              setCurrentFormType(jsonData.formType as FormType);
               return; // Found a form type, stop searching
-            } else if (metadata.action === 'complete') {
-              setIsComplete(true);
-              markAsOnboarded();
+            } else if (jsonData.action === 'complete') {
+              markAsOnboarded(collectedDataRef.current);
               return;
             }
           } catch (e) {
-            // Try parsing from the last line as fallback
-            const lines = fullText.split('\n');
-            const lastLine = lines[lines.length - 1]?.trim();
-            if (lastLine && lastLine.startsWith('{') && lastLine.endsWith('}')) {
-              try {
-                const metadata = JSON.parse(lastLine);
-                if (metadata.action === 'showForm' && metadata.formType) {
-                  console.log('Setting form type (from last line):', metadata.formType);
-                  setCurrentFormType(metadata.formType as FormType);
-                  return;
-                } else if (metadata.action === 'complete') {
-                  setIsComplete(true);
-                  markAsOnboarded();
-                  return;
-                }
-              } catch (e2) {
-                // Not valid JSON, continue
-              }
-            }
+            console.error('Failed to parse assistant metadata:', e);
+            setOnboardingError('We could not understand the assistant response. Please retry your last submission.');
+            return;
           }
         }
       }
     }
-  }, [messages]);
-
-  const markAsOnboarded = async () => {
-    try {
-      const response = await fetch('/api/users/onboarded', {
-        method: 'POST',
-        credentials: 'include',
-      });
-      if (response.ok) {
-        setTimeout(() => router.push('/dashboard'), 1500);
-      }
-    } catch (err) {
-      console.error('Error marking as onboarded:', err);
-    }
-  };
+  }, [messages, markAsOnboarded, isOnboardingComplete]);
 
   const FormComponent = currentFormType ? FORM_COMPONENTS[currentFormType] : null;
 
+  /**
+   * Handles the submission of a form by updating the collected data and sending
+   * the form data to the AI. This triggers the assistant to process the form data
+   * and respond with the next form type or completion message.
+   *
+   * @param type - The type of form being submitted.
+   * @param values - The values collected from the form.
+   */
   const handleFormSubmit = (type: FormType) => (values: Record<string, any>) => {
-    const updatedData = { ...collectedData, ...values };
+    const updatedData = {...collectedData, ...values};
     setCollectedData(updatedData);
     // Don't clear form type immediately - let the AI response set the next one
     // This prevents flickering and ensures smooth transition
@@ -188,7 +218,7 @@ export default function OnboardingPage() {
   // Removed manual scroll handling - Conversation component handles this
 
   const handleGetStarted = () => {
-    sendMessage({ text: "Let's get started!" });
+    sendMessage({text: "Let's get started!"});
   };
 
   const renderMessage = (message: any, index: number) => {
@@ -264,7 +294,8 @@ export default function OnboardingPage() {
             <div className="space-y-3">
               <h1 className="text-3xl font-semibold tracking-tight">Welcome to Knot Ready!</h1>
               <p className="text-lg text-muted-foreground">
-                I'm here to help you prepare for your sailing adventure. Let's gather some information about you and your boat to create a personalized preparation plan.
+                I&apos;m here to help you prepare for your sailing adventure. Let&apos;s gather some information about
+                you and your boat to create a personalized preparation plan.
               </p>
               <p className="text-muted-foreground">
                 This will only take a few minutes. Ready to begin?
@@ -276,41 +307,41 @@ export default function OnboardingPage() {
                 size="lg"
                 className="mt-4"
               >
-                Let's get started
+                Let&apos;s get started
               </Button>
             )}
           </div>
           {messages.map((message, index) => renderMessage(message, index))}
 
-          {FormComponent && !isComplete && currentFormType && (
+          {FormComponent && !isOnboardingComplete && currentFormType && status === 'ready' && (
             <div className="mt-4">
               <FormComponent
                 key={currentFormType}
                 initialValues={collectedData}
                 onSubmit={handleFormSubmit(currentFormType)}
-                isSubmitting={status === 'submitted' || status === 'streaming'}
               />
             </div>
           )}
 
-          {(status === 'submitted' || status === 'streaming') && (
-            <Message from="assistant">
-              <MessageContent>
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Loader size={16} />
-                  <span className="text-sm">Assistant is thinking…</span>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="mt-2"
-                  onClick={() => stop()}
-                >
-                  Stop
-                </Button>
-              </MessageContent>
-            </Message>
-          )}
+          {/* not provide stop option now as it onboarding process is fast */}
+          {/*{(status === 'submitted' || status === 'streaming') && (*/}
+          {/*  <Message from="assistant">*/}
+          {/*    <MessageContent>*/}
+          {/*      <div className="flex items-center gap-2 text-muted-foreground">*/}
+          {/*        <Loader size={16}/>*/}
+          {/*        <span className="text-sm">Assistant is thinking…</span>*/}
+          {/*      </div>*/}
+          {/*      <Button*/}
+          {/*        variant="ghost"*/}
+          {/*        size="sm"*/}
+          {/*        className="mt-2"*/}
+          {/*        onClick={() => stop()}*/}
+          {/*      >*/}
+          {/*        Stop*/}
+          {/*      </Button>*/}
+          {/*    </MessageContent>*/}
+          {/*  </Message>*/}
+          {/*)}*/}
 
           {error && (
             <Message from="assistant">
@@ -322,7 +353,24 @@ export default function OnboardingPage() {
             </Message>
           )}
 
-          {isComplete && (
+          {onboardingError && (
+            <Message from="assistant">
+              <MessageContent>
+                <div className="space-y-2 text-sm text-destructive">
+                  <p>{onboardingError}</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => markAsOnboarded(collectedDataRef.current)}
+                  >
+                    Try again
+                  </Button>
+                </div>
+              </MessageContent>
+            </Message>
+          )}
+
+          {isOnboardingComplete && (
             <Message from="assistant">
               <MessageContent>
                 <div className="rounded-2xl border border-green-200 bg-green-50 p-4 text-sm text-green-700">
@@ -332,7 +380,7 @@ export default function OnboardingPage() {
             </Message>
           )}
         </ConversationContent>
-        <ConversationScrollButton />
+        <ConversationScrollButton/>
       </Conversation>
     </div>
   );
