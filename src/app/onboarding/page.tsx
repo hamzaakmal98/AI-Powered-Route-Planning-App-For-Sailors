@@ -28,6 +28,8 @@ import {
 } from '@/components/ai-elements/message';
 import {Loader} from '@/components/ai-elements/loader';
 import {Button} from '@/components/ui/button';
+import {Avatar, AvatarFallback} from '@/components/ui/avatar';
+import {Anchor} from 'lucide-react';
 
 const FORM_COMPONENTS: Record<FormType, React.FC<OnboardingFormProps<any>>> = {
   boat_info: BoatInfoForm,
@@ -37,6 +39,8 @@ const FORM_COMPONENTS: Record<FormType, React.FC<OnboardingFormProps<any>>> = {
   goals_priorities: GoalsForm,
   concerns_challenges: ConcernsForm,
 };
+
+const ASSISTANT_NAME = 'First Mate';
 
 const FORM_SUMMARIES: Record<FormType, { title: string; fields: Array<{ name: string; label: string }> }> = {
   boat_info: {
@@ -277,6 +281,24 @@ export default function OnboardingPage() {
     // Remove JSON metadata from displayed message (keep it for parsing but don't show it)
     messageText = messageText.replace(/\{[\s\S]*"formType"[\s\S]*\}/g, '').replace(/\{[\s\S]*"action"[\s\S]*"complete"[\s\S]*\}/g, '').trim();
 
+    // For assistant messages, include avatar
+    if (message.role === 'assistant') {
+      return (
+        <div key={message.id || index} className="flex items-start gap-3 w-full">
+          <Avatar className="size-8 shrink-0">
+            <AvatarFallback className="bg-primary text-primary-foreground">
+              <Anchor className="size-4" />
+            </AvatarFallback>
+          </Avatar>
+          <Message from={message.role} className="flex-1">
+            <MessageContent>
+              {messageText && <MessageResponse>{messageText}</MessageResponse>}
+            </MessageContent>
+          </Message>
+        </div>
+      );
+    }
+
     return (
       <Message key={message.id || index} from={message.role}>
         <MessageContent>
@@ -294,11 +316,10 @@ export default function OnboardingPage() {
             <div className="space-y-3">
               <h1 className="text-3xl font-semibold tracking-tight">Welcome to Knot Ready!</h1>
               <p className="text-lg text-muted-foreground">
-                I&apos;m here to help you prepare for your sailing adventure. Let&apos;s gather some information about
-                you and your boat to create a personalized preparation plan.
+                Hi there! I&apos;m {ASSISTANT_NAME}, and I&apos;m thrilled to be your sailing preparation companion. I&apos;ll be with you every step of the way—from planning your journey to helping you stay on track as you prepare. Together, we&apos;ll make sure you&apos;re ready for the adventure ahead!
               </p>
               <p className="text-muted-foreground">
-                This will only take a few minutes. Ready to begin?
+                Let&apos;s start by getting to know you and your boat. This will only take a few minutes, and I&apos;ll be right here with you throughout. Ready to begin?
               </p>
             </div>
             {messages.length === 0 && (
@@ -344,40 +365,61 @@ export default function OnboardingPage() {
           {/*)}*/}
 
           {error && (
-            <Message from="assistant">
-              <MessageContent>
-                <div className="text-sm text-destructive">
-                  Something went wrong. Please try again.
-                </div>
-              </MessageContent>
-            </Message>
+            <div className="flex items-start gap-3 w-full">
+              <Avatar className="size-8 shrink-0">
+                <AvatarFallback className="bg-primary text-primary-foreground">
+                  <Anchor className="size-4" />
+                </AvatarFallback>
+              </Avatar>
+              <Message from="assistant" className="flex-1">
+                <MessageContent>
+                  <div className="text-base text-destructive">
+                    Something went wrong. Please try again.
+                  </div>
+                </MessageContent>
+              </Message>
+            </div>
           )}
 
           {onboardingError && (
-            <Message from="assistant">
-              <MessageContent>
-                <div className="space-y-2 text-sm text-destructive">
-                  <p>{onboardingError}</p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => markAsOnboarded(collectedDataRef.current)}
-                  >
-                    Try again
-                  </Button>
-                </div>
-              </MessageContent>
-            </Message>
+            <div className="flex items-start gap-3 w-full">
+              <Avatar className="size-8 shrink-0">
+                <AvatarFallback className="bg-primary text-primary-foreground">
+                  <Anchor className="size-4" />
+                </AvatarFallback>
+              </Avatar>
+              <Message from="assistant" className="flex-1">
+                <MessageContent>
+                  <div className="space-y-2 text-base text-destructive">
+                    <p>{onboardingError}</p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => markAsOnboarded(collectedDataRef.current)}
+                    >
+                      Try again
+                    </Button>
+                  </div>
+                </MessageContent>
+              </Message>
+            </div>
           )}
 
           {isOnboardingComplete && (
-            <Message from="assistant">
-              <MessageContent>
-                <div className="rounded-2xl border border-green-200 bg-green-50 p-4 text-sm text-green-700">
-                  All set! Redirecting you to the dashboard.
-                </div>
-              </MessageContent>
-            </Message>
+            <div className="flex items-start gap-3 w-full">
+              <Avatar className="size-8 shrink-0">
+                <AvatarFallback className="bg-primary text-primary-foreground">
+                  <Anchor className="size-4" />
+                </AvatarFallback>
+              </Avatar>
+              <Message from="assistant" className="flex-1">
+                <MessageContent>
+                  <div className="rounded-2xl border border-green-200 bg-green-50 p-4 text-base text-green-700">
+                    All set! Redirecting you to the dashboard.
+                  </div>
+                </MessageContent>
+              </Message>
+            </div>
           )}
         </ConversationContent>
         <ConversationScrollButton/>
