@@ -13,13 +13,3 @@ export const formTypeSchema = z.enum([
 
 export type FormType = z.infer<typeof formTypeSchema>;
 
-export const onboardingSchema = z.object({
-  conversation: z.object({
-    currentStep: z.string(),
-    message: z.string(),
-    formType: formTypeSchema.optional(),
-    isComplete: z.boolean(),
-  }),
-  collectedData: z.record(z.string(), z.any()).optional(),
-});
-

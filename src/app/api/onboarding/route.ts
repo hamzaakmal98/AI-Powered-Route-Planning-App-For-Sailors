@@ -1,5 +1,6 @@
 import { streamText, UIMessage, convertToModelMessages } from 'ai';
 import { ollama } from 'ollama-ai-provider-v2';
+import {openai} from "@ai-sdk/openai";
 
 export const maxDuration = 30;
 
@@ -34,7 +35,7 @@ export async function POST(req: Request) {
     const modelMessages = convertToModelMessages(messages);
 
     const result = streamText({
-      model: ollama('qwen3:8b'),
+      model: process.env.NODE_ENV == "production" ? openai("gpt-3.5-turbo") : ollama('qwen3:8b'),
       system: systemPrompt,
       messages: modelMessages,
       temperature: 0.6,
