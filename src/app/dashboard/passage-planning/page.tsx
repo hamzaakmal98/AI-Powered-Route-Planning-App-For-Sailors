@@ -16,7 +16,7 @@ const generateConfetti = () => {
   }));
 };
 
-export default function Index() {
+export default function PassagePlanningPage() {
   const router = useRouter();
   const [chatInput, setChatInput] = useState("");
   const [showCelebration, setShowCelebration] = useState(false);
@@ -167,7 +167,7 @@ export default function Index() {
                     </div>
                     <div className="text-xs">
                       <p className="text-muted-foreground">Website:</p>
-                      <p className="text-accent text-xs">
+                      <p className="text-black text-xs">
                         www.barbados.gov.bb/customs
                       </p>
                     </div>
@@ -196,7 +196,7 @@ export default function Index() {
                     </div>
                     <div className="text-xs">
                       <p className="text-muted-foreground">Website:</p>
-                      <p className="text-accent text-xs">
+                      <p className="text-black text-xs">
                         www.barbadosports.com/cruising
                       </p>
                     </div>
@@ -293,7 +293,7 @@ export default function Index() {
                   </p>
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <div
-                      className="bg-accent h-2 rounded-full"
+                      className="bg-black h-2 rounded-full"
                       style={{ width: `${progressPercentage}%` }}
                     ></div>
                   </div>
@@ -330,7 +330,7 @@ export default function Index() {
             {/* Ask AI Planner */}
             <section className="bg-white rounded-lg border border-border p-6">
               <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-                <span className="w-5 h-5 bg-accent text-white rounded-full flex items-center justify-center flex-shrink-0">
+                <span className="w-5 h-5 bg-accent text-black rounded-full flex items-center justify-center flex-shrink-0">
                   ★
                 </span>
                 Ask AI Planner
@@ -338,7 +338,7 @@ export default function Index() {
               <p className="text-xs text-muted-foreground mb-3">
                 Any tips for clearing customs in Bridgetown?
               </p>
-              <div className="bg-accent text-white p-3 rounded-md mb-4">
+              <div className="bg-accent text-black p-3 rounded-md mb-4">
                 <p className="text-xs leading-relaxed">
                   Of course! Ensure you have your ship&apos;s documentation,
                   completed customs declaration form, proof of ownership (Bill
@@ -356,7 +356,7 @@ export default function Index() {
                 />
                 <button
                   type="submit"
-                  className="px-3 py-2 bg-accent text-white rounded-md hover:bg-accent/90 transition"
+                  className="px-3 py-2 bg-accent text-black rounded-md hover:bg-accent/90 transition"
                 >
                   <Send className="w-4 h-4" />
                 </button>

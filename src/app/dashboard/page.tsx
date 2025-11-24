@@ -1,9 +1,15 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
@@ -31,7 +37,7 @@ import {
   User,
   Settings,
   LogOut,
-  Loader2
+  Loader2,
 } from "lucide-react";
 
 export default function DashboardPage() {
@@ -45,12 +51,12 @@ export default function DashboardPage() {
         if (response.ok) {
           const user = await response.json();
           if (!user.onboarded) {
-            router.push('/onboarding');
+            router.push("/onboarding");
             return;
           }
         }
       } catch (error) {
-        console.error('Error checking onboarding status:', error);
+        console.error("Error checking onboarding status:", error);
       } finally {
         setIsChecking(false);
       }
@@ -119,19 +125,52 @@ export default function DashboardPage() {
   ];
 
   const domainProgress = [
-    { name: "Boat Maintenance", icon: Shield, progress: 45, difficulty: "2.81/5" },
-    { name: "Skill Building", icon: TrendingUp, progress: 30, difficulty: null },
+    {
+      name: "Boat Maintenance",
+      icon: Shield,
+      progress: 45,
+      difficulty: "2.81/5",
+    },
+    {
+      name: "Skill Building",
+      icon: TrendingUp,
+      progress: 30,
+      difficulty: null,
+    },
     { name: "Weather Routing", icon: Compass, progress: 15, difficulty: null },
     { name: "Safety Systems", icon: Zap, progress: 20, difficulty: null },
     { name: "Budget Management", icon: Target, progress: 10, difficulty: null },
     { name: "Passage Planning", icon: Route, progress: 5, difficulty: null },
-    { name: "Timeline Management", icon: Calendar, progress: 25, difficulty: null },
+    {
+      name: "Timeline Management",
+      icon: Calendar,
+      progress: 25,
+      difficulty: null,
+    },
   ];
 
   const executionProgress = [
-    { level: "Day Sails", status: "in_progress", completed: 3, required: 5, unlocked: true },
-    { level: "Overnights", status: "locked", completed: 0, required: 3, unlocked: false },
-    { level: "Multi-day Passages", status: "locked", completed: 0, required: 2, unlocked: false },
+    {
+      level: "Day Sails",
+      status: "in_progress",
+      completed: 3,
+      required: 5,
+      unlocked: true,
+    },
+    {
+      level: "Overnights",
+      status: "locked",
+      completed: 0,
+      required: 3,
+      unlocked: false,
+    },
+    {
+      level: "Multi-day Passages",
+      status: "locked",
+      completed: 0,
+      required: 2,
+      unlocked: false,
+    },
   ];
 
   const overallProgress = 28; // Calculated from domain progress
@@ -168,7 +207,9 @@ export default function DashboardPage() {
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Welcome Section */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold tracking-tight mb-2">Welcome back, Captain</h1>
+          <h1 className="text-3xl font-bold tracking-tight mb-2">
+            Welcome back, Captain
+          </h1>
           <p className="text-muted-foreground">
             Here&apos;s your personalized preparation roadmap
           </p>
@@ -189,11 +230,17 @@ export default function DashboardPage() {
             <CardHeader className="pb-3">
               <CardDescription>Active Priorities</CardDescription>
               <CardTitle className="text-3xl">
-                {nextPriorities.filter(p => p.status === "in_progress" || p.status === "ready").length}
+                {
+                  nextPriorities.filter(
+                    (p) => p.status === "in_progress" || p.status === "ready"
+                  ).length
+                }
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-muted-foreground">Tasks ready to tackle</p>
+              <p className="text-sm text-muted-foreground">
+                Tasks ready to tackle
+              </p>
             </CardContent>
           </Card>
           <Card>
@@ -202,7 +249,9 @@ export default function DashboardPage() {
               <CardTitle className="text-3xl">127</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-muted-foreground">On track for your timeline</p>
+              <p className="text-sm text-muted-foreground">
+                On track for your timeline
+              </p>
             </CardContent>
           </Card>
           <Card>
@@ -216,14 +265,16 @@ export default function DashboardPage() {
           </Card>
         </div>
 
-
         {/* Next 3-5 Priorities Section */}
         <section className="mb-8">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h2 className="text-2xl font-bold tracking-tight mb-2">Your Next Priorities</h2>
+              <h2 className="text-2xl font-bold tracking-tight mb-2">
+                Your Next Priorities
+              </h2>
               <p className="text-muted-foreground">
-                Focus on these tasks next—sequenced specifically for your journey
+                Focus on these tasks next—sequenced specifically for your
+                journey
               </p>
             </div>
             <Button variant="outline">
@@ -246,7 +297,13 @@ export default function DashboardPage() {
                 <CardHeader>
                   <div className="flex items-start justify-between mb-2">
                     <Badge
-                      variant={priority.status === "in_progress" ? "default" : priority.status === "ready" ? "secondary" : "outline"}
+                      variant={
+                        priority.status === "in_progress"
+                          ? "default"
+                          : priority.status === "ready"
+                          ? "secondary"
+                          : "outline"
+                      }
                       className="text-xs"
                     >
                       Priority {priority.priority}
@@ -273,18 +330,26 @@ export default function DashboardPage() {
                         {priority.estimatedTime}
                       </span>
                       {priority.status === "in_progress" && (
-                        <span className="text-primary font-medium">{priority.progress}%</span>
+                        <span className="text-primary font-medium">
+                          {priority.progress}%
+                        </span>
                       )}
                     </div>
                     {priority.status === "in_progress" && (
                       <Progress value={priority.progress} className="h-2" />
                     )}
                     <Button
-                      variant={priority.status === "locked" ? "outline" : "default"}
+                      variant={
+                        priority.status === "locked" ? "outline" : "default"
+                      }
                       className="w-full"
                       disabled={priority.status === "locked"}
                     >
-                      {priority.status === "locked" ? "Locked" : priority.status === "in_progress" ? "Continue" : "Start"}
+                      {priority.status === "locked"
+                        ? "Locked"
+                        : priority.status === "in_progress"
+                        ? "Continue"
+                        : "Start"}
                       <ArrowRight className="ml-2 h-4 w-4" />
                     </Button>
                   </div>
@@ -299,7 +364,9 @@ export default function DashboardPage() {
           <section className="lg:col-span-2">
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h2 className="text-2xl font-bold tracking-tight mb-2">Preparation Domains</h2>
+                <h2 className="text-2xl font-bold tracking-tight mb-2">
+                  Preparation Domains
+                </h2>
                 <p className="text-muted-foreground">
                   Your progress across all seven areas
                 </p>
@@ -315,7 +382,9 @@ export default function DashboardPage() {
                           <domain.icon className="h-5 w-5 text-primary" />
                         </div>
                         <div>
-                          <CardTitle className="text-base">{domain.name}</CardTitle>
+                          <CardTitle className="text-base">
+                            {domain.name}
+                          </CardTitle>
                           {domain.difficulty && (
                             <Badge variant="outline" className="text-xs mt-1">
                               Difficulty: {domain.difficulty}
@@ -323,15 +392,33 @@ export default function DashboardPage() {
                           )}
                         </div>
                       </div>
-                      <span className="text-2xl font-bold">{domain.progress}%</span>
+                      <span className="text-2xl font-bold">
+                        {domain.progress}%
+                      </span>
                     </div>
                   </CardHeader>
                   <CardContent>
                     <Progress value={domain.progress} className="h-2" />
-                    <Button variant="ghost" size="sm" className="w-full mt-3">
-                      View Details
-                      <ChevronRight className="ml-2 h-4 w-4" />
-                    </Button>
+                    {domain.name === "Passage Planning" ? (
+                      // If the domain is "Passage Planning", add a navigation button
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="w-full mt-3"
+                        onClick={() =>
+                          router.push("dashboard/passage-planning")
+                        }
+                      >
+                        View Details
+                        <ChevronRight className="ml-2 h-4 w-4" />
+                      </Button>
+                    ) : (
+                      // For all other domains, keep the regular "View Details" button
+                      <Button variant="ghost" size="sm" className="w-full mt-3">
+                        View Details
+                        <ChevronRight className="ml-2 h-4 w-4" />
+                      </Button>
+                    )}
                   </CardContent>
                 </Card>
               ))}
@@ -341,7 +428,9 @@ export default function DashboardPage() {
           {/* Execution System Progress */}
           <section>
             <div className="mb-6">
-              <h2 className="text-2xl font-bold tracking-tight mb-2">Practical Experience</h2>
+              <h2 className="text-2xl font-bold tracking-tight mb-2">
+                Practical Experience
+              </h2>
               <p className="text-muted-foreground text-sm">
                 Build real sailing skills with verified progress
               </p>
@@ -350,7 +439,9 @@ export default function DashboardPage() {
               {executionProgress.map((level, index) => (
                 <Card
                   key={index}
-                  className={level.unlocked ? "border-2 border-primary/20" : "opacity-60"}
+                  className={
+                    level.unlocked ? "border-2 border-primary/20" : "opacity-60"
+                  }
                 >
                   <CardHeader>
                     <div className="flex items-center justify-between">
@@ -427,7 +518,9 @@ export default function DashboardPage() {
         {/* Recent Activity */}
         <section className="mt-8">
           <div className="mb-6">
-            <h2 className="text-2xl font-bold tracking-tight mb-2">Recent Activity</h2>
+            <h2 className="text-2xl font-bold tracking-tight mb-2">
+              Recent Activity
+            </h2>
             <p className="text-muted-foreground text-sm">
               Your latest progress and achievements
             </p>
@@ -436,18 +529,48 @@ export default function DashboardPage() {
             <CardContent className="pt-6">
               <div className="space-y-4">
                 {[
-                  { action: "Completed", task: "Engine service checklist", time: "2 hours ago", icon: CheckCircle2, color: "text-primary" },
-                  { action: "Unlocked", task: "Day sail verification", time: "Yesterday", icon: Unlock, color: "text-primary" },
-                  { action: "Started", task: "Weather monitoring setup", time: "3 days ago", icon: Clock, color: "text-muted-foreground" },
-                  { action: "Achievement", task: "Completed 10 tasks", time: "1 week ago", icon: Trophy, color: "text-yellow-600" },
+                  {
+                    action: "Completed",
+                    task: "Engine service checklist",
+                    time: "2 hours ago",
+                    icon: CheckCircle2,
+                    color: "text-primary",
+                  },
+                  {
+                    action: "Unlocked",
+                    task: "Day sail verification",
+                    time: "Yesterday",
+                    icon: Unlock,
+                    color: "text-primary",
+                  },
+                  {
+                    action: "Started",
+                    task: "Weather monitoring setup",
+                    time: "3 days ago",
+                    icon: Clock,
+                    color: "text-muted-foreground",
+                  },
+                  {
+                    action: "Achievement",
+                    task: "Completed 10 tasks",
+                    time: "1 week ago",
+                    icon: Trophy,
+                    color: "text-yellow-600",
+                  },
                 ].map((activity, index) => (
                   <div key={index} className="flex items-center gap-4">
-                    <div className={`flex h-10 w-10 items-center justify-center rounded-full bg-muted ${activity.color}`}>
+                    <div
+                      className={`flex h-10 w-10 items-center justify-center rounded-full bg-muted ${activity.color}`}
+                    >
                       <activity.icon className="h-5 w-5" />
                     </div>
                     <div className="flex-1">
-                      <p className="font-medium">{activity.action}: {activity.task}</p>
-                      <p className="text-sm text-muted-foreground">{activity.time}</p>
+                      <p className="font-medium">
+                        {activity.action}: {activity.task}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {activity.time}
+                      </p>
                     </div>
                   </div>
                 ))}
