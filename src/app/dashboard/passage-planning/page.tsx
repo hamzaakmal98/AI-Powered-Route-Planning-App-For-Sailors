@@ -1,89 +1,302 @@
 "use client";
 
-import { AlertTriangle, AlertCircle, Send, ChevronRight } from "lucide-react";
-import { useState, useEffect, useMemo } from "react";
+import {
+  AlertTriangle,
+  AlertCircle,
+  Send,
+  ChevronRight,
+  MapPin,
+  Lightbulb,
+  X,
+} from "lucide-react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 
-const colors = ["#3b82f6", "#1e40af", "#fbbf24", "#fcd34d", "#ec4899"];
+// Mock destination data for autocomplete
+const DESTINATIONS = [
+  { name: "Bridgetown, Barbados", code: "BGI", country: "Barbados" },
+  { name: "Barbados", code: "BGI", country: "Barbados" },
+  { name: "Funchal, Madeira", code: "FNC", country: "Portugal" },
+  { name: "Las Palmas, Canary Islands", code: "LPA", country: "Spain" },
+  { name: "Mindelo, Cape Verde", code: "RAI", country: "Cape Verde" },
+  { name: "Lisbon, Portugal", code: "LIS", country: "Portugal" },
+  { name: "Casablanca, Morocco", code: "CAS", country: "Morocco" },
+  { name: "Dakar, Senegal", code: "DSS", country: "Senegal" },
+  { name: "Gran Canaria, Spain", code: "LPA", country: "Spain" },
+  { name: "Tenerife, Spain", code: "TFS", country: "Spain" },
+];
 
-const generateConfetti = () => {
-  return Array.from({ length: 50 }).map((_, i) => ({
-    id: i,
-    left: Math.random() * 100,
-    color: colors[Math.floor(Math.random() * colors.length)],
-    delay: i * 30,
-  }));
-};
+const PORTS = [
+  {
+    id: 1,
+    name: "Funchal, Madeira",
+    rating: 4.8,
+    reviews: 45,
+    fees: "$850-1,200/night",
+    distance: "3 days",
+    amenities: ["Fuel", "Water", "Provisions"],
+  },
+  {
+    id: 2,
+    name: "Las Palmas, Canary Islands",
+    rating: 4.2,
+    reviews: 28,
+    fees: "$900-1,400/night",
+    distance: "5 days",
+    amenities: ["Fuel", "Booking", "Repair"],
+  },
+  {
+    id: 3,
+    name: "Mindelo, Cape Verde",
+    rating: 4.5,
+    reviews: 32,
+    fees: "$600-900/night",
+    distance: "7 days",
+    amenities: ["Fuel", "Water", "Provisions", "Repair"],
+  },
+];
+
+const ALL_AMENITIES = ["Fuel", "Water", "Provisions", "Booking", "Repair"];
+
+interface ChecklistItem {
+  id: string;
+  category: string;
+  items: {
+    id: string;
+    label: string;
+    checked: boolean;
+  }[];
+}
+
+interface ChatMessage {
+  id: string;
+  user: boolean;
+  text: string;
+}
+
+const CHECKLIST_ITEMS: ChecklistItem[] = [
+  {
+    category: "REGULATORY COMPLIANCE",
+    items: [
+      { id: "visas", label: "Visas/Permits & Entry Visas", checked: false },
+      { id: "insurance", label: "Insurance & Travel docs", checked: false },
+    ],
+    id: "",
+  },
+  {
+    category: "ROUTE PLANNING",
+    items: [
+      { id: "waypoints", label: "Waypoints & Routing Drafts", checked: false },
+      { id: "navigation", label: "Navigation Charts Setup", checked: false },
+    ],
+    id: "",
+  },
+  {
+    category: "DESTINATION PREP",
+    items: [
+      { id: "provisioning", label: "Provisioning & Supplies", checked: false },
+      {
+        id: "accommodations",
+        label: "Accommodations & Activities",
+        checked: false,
+      },
+    ],
+    id: "",
+  },
+];
 
 export default function PassagePlanningPage() {
   const router = useRouter();
   const [chatInput, setChatInput] = useState("");
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [showCelebration, setShowCelebration] = useState(false);
-  const [checklist, setChecklist] = useState({
-    passport: false,
-    visas: true,
-    weather: true,
-    charts: false,
-    provisioning: true,
-    anchorages: true,
+  const [checklist, setChecklist] = useState<ChecklistItem[]>(CHECKLIST_ITEMS);
+  const [departure, setDeparture] = useState("Lisbon, Portugal");
+  const [departureInput, setDepartureInput] = useState("Lisbon, Portugal");
+  const [destination, setDestination] = useState("Bridgetown, Barbados");
+  const [destinationInput, setDestinationInput] = useState(
+    "Bridgetown, Barbados"
+  );
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [filteredSuggestions, setFilteredSuggestions] = useState<
+    typeof DESTINATIONS
+  >([]);
+  const [validationError, setValidationError] = useState("");
+  const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
+  const [portNotes, setPortNotes] = useState<Record<number, string>>({});
+  const [showNotesModal, setShowNotesModal] = useState<number | null>(null);
+  const [noteInput, setNoteInput] = useState("");
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Scroll to bottom of chat
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages]);
+
+  // Update page title when destination changes
+  useEffect(() => {
+    document.title = `Atlantic Crossing: ${departure} to ${destination}`;
+  }, [departure, destination]);
+
+  // Save or update port note (fake database)
+  const savePortNote = (portId: number, noteText: string) => {
+    setPortNotes((prev) => ({ ...prev, [portId]: noteText }));
+    setShowNotesModal(null);
+    setNoteInput("");
+  };
+
+  // Calculate progress
+  const totalItems = checklist.reduce((sum, cat) => sum + cat.items.length, 0);
+  const checkedItems = checklist.reduce(
+    (sum, cat) => sum + cat.items.filter((item) => item.checked).length,
+    0
+  );
+  const progressPercentage =
+    totalItems > 0 ? Math.round((checkedItems / totalItems) * 100) : 0;
+
+  const previousProgress = useRef(progressPercentage);
+  useEffect(() => {
+    if (previousProgress.current < 100 && progressPercentage === 100) {
+      setShowCelebration(true);
+      const timer = setTimeout(() => setShowCelebration(false), 2500);
+      return () => clearTimeout(timer);
+    }
+
+    previousProgress.current = progressPercentage;
+  }, [progressPercentage]);
+
+  // Handle destination input change with autocomplete
+  const handleDestinationInput = (value: string) => {
+    setDestinationInput(value);
+    if (value.length > 0) {
+      const filtered = DESTINATIONS.filter((dest) =>
+        dest.name.toLowerCase().includes(value.toLowerCase())
+      );
+      setFilteredSuggestions(filtered);
+      setShowSuggestions(true);
+    } else {
+      setShowSuggestions(false);
+    }
+  };
+
+  // Handle selecting a destination from dropdown
+  const selectDestination = (dest: string) => {
+    setDestinationInput(dest);
+    setShowSuggestions(false);
+    setValidationError("");
+  };
+
+  // Validate and submit form
+  const handleSubmitRoute = () => {
+    // Check if both departure and destination are valid
+    const isDepartureValid = DESTINATIONS.some(
+      (d) => d.name.toLowerCase() === departureInput.toLowerCase()
+    );
+    const isDestinationValid = DESTINATIONS.some(
+      (d) => d.name.toLowerCase() === destinationInput.toLowerCase()
+    );
+
+    if (!isDepartureValid || !isDestinationValid) {
+      setValidationError(
+        "Please select valid locations from the suggestions or enter a legitimate location."
+      );
+      return;
+    }
+
+    setDeparture(departureInput);
+    setDestination(destinationInput);
+    setValidationError("");
+  };
+
+  // Toggle amenity filter
+  const toggleAmenity = (amenity: string) => {
+    setSelectedAmenities((prev) =>
+      prev.includes(amenity)
+        ? prev.filter((a) => a !== amenity)
+        : [...prev, amenity]
+    );
+  };
+
+  // Filter ports by amenities
+  const filteredPorts = PORTS.filter((port) => {
+    if (selectedAmenities.length === 0) return true;
+    return selectedAmenities.every((amenity) =>
+      port.amenities.includes(amenity)
+    );
   });
 
-  const confetti = useMemo(() => generateConfetti(), []);
-
-  const handleSendMessage = (e: React.FormEvent) => {
-    e.preventDefault();
+  // Handle chat submission
+  const handleSendMessage = () => {
+    if (chatInput.trim() === "") return;
+    const newMessage: ChatMessage = {
+      id: Date.now().toString(),
+      user: true,
+      text: chatInput,
+    };
+    setChatMessages((prev) => [...prev, newMessage]);
     setChatInput("");
   };
 
-  const handleChecklistChange = (key: keyof typeof checklist) => {
-    setChecklist((prev) => ({
-      ...prev,
-      [key]: !prev[key],
-    }));
+  // Toggle checklist item
+  const toggleChecklistItem = (categoryIdx: number, itemIdx: number) => {
+    const newChecklist = [...checklist];
+    newChecklist[categoryIdx].items[itemIdx].checked =
+      !newChecklist[categoryIdx].items[itemIdx].checked;
+    setChecklist(newChecklist);
   };
-
-  const totalItems = Object.keys(checklist).length;
-  const checkedItems = Object.values(checklist).filter(Boolean).length;
-  const progressPercentage = Math.round((checkedItems / totalItems) * 100);
-
-  useEffect(() => {
-    if (progressPercentage === 100) {
-      setShowCelebration(true);
-      const timer = setTimeout(() => setShowCelebration(false), 4000);
-      return () => clearTimeout(timer);
-    }
-  }, [progressPercentage]);
 
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Celebration Animation */}
       {showCelebration && (
-        <div className="fixed inset-0 pointer-events-none overflow-hidden">
-          {/* Confetti pieces */}
-          {confetti.map((item) => (
-            <div
-              key={`confetti-${item.id}`}
-              className="absolute animate-confetti"
-              style={{
-                left: `${item.left}%`,
-                top: "-10px",
-                width: "10px",
-                height: "10px",
-                backgroundColor: item.color,
-                borderRadius: "50%",
-                animationDelay: `${item.delay}ms`,
-              }}
-            />
-          ))}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="bg-white rounded-lg shadow-2xl p-8 text-center pointer-events-auto animate-in fade-in zoom-in">
+            <div className="text-5xl mb-4">⛵</div>
+            <h3 className="text-3xl font-bold text-blue-600 mb-2">
+              100% Complete!
+            </h3>
+            <p className="text-slate-600">
+              Your route is fully prepared and ready to go!
+            </p>
+          </div>
+        </div>
+      )}
 
-          {/* Center celebration message */}
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="text-center animate-bounce-scale">
-              <div className="text-6xl mb-4">⛵</div>
-              <h3 className="text-3xl font-bold text-blue-600 mb-2">
-                100% Complete!
+      {/* Notes Modal */}
+      {showNotesModal !== null && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-50">
+          <div className="bg-white rounded-lg shadow-2xl p-6 w-96 max-w-full">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-slate-900">
+                Notes for {PORTS.find((p) => p.id === showNotesModal)?.name}
               </h3>
+              <button
+                onClick={() => setShowNotesModal(null)}
+                className="p-1 hover:bg-slate-100 rounded"
+              >
+                <X className="w-4 h-4 text-slate-600" />
+              </button>
+            </div>
+            <textarea
+              value={noteInput || portNotes[showNotesModal] || ""}
+              onChange={(e) => setNoteInput(e.target.value)}
+              placeholder="Add your notes here..."
+              className="w-full h-32 p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+            />
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={() => savePortNote(showNotesModal, noteInput || "")}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
+              >
+                Save Note
+              </button>
+              <button
+                onClick={() => setShowNotesModal(null)}
+                className="flex-1 px-4 py-2 bg-slate-200 text-slate-900 rounded-lg hover:bg-slate-300 font-medium"
+              >
+                Cancel
+              </button>
             </div>
           </div>
         </div>
@@ -93,7 +306,7 @@ export default function PassagePlanningPage() {
       <div className="border-b border-border bg-white">
         <div className="max-w-7xl mx-auto px-6 py-8">
           <h1 className="text-3xl font-bold text-foreground mb-2">
-            Atlantic Crossing: Lisbon to Barbados
+            {departure} to {destination}
           </h1>
           <p className="text-sm text-muted-foreground">
             Total Distance: 5,680 KM • Estimated Duration: 21 Days
@@ -111,20 +324,65 @@ export default function PassagePlanningPage() {
               <h2 className="text-lg font-semibold text-foreground mb-4">
                 Route Information
               </h2>
-              <div className="space-y-3 text-sm text-foreground">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
                 <div>
-                  <span className="font-medium">Departure:</span> Lisbon,
-                  Portugal
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    <MapPin className="inline w-4 h-4 mr-2" />
+                    Departure
+                  </label>
+                  <input
+                    type="text"
+                    value={departureInput}
+                    onChange={(e) => setDepartureInput(e.target.value)}
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
                 </div>
                 <div>
-                  <span className="font-medium">Arrival:</span> Bridgetown,
-                  Barbados
-                </div>
-                <div>
-                  <span className="font-medium">Waypoints:</span> Madeira,
-                  Canary Islands
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    <MapPin className="inline w-4 h-4 mr-2" />
+                    Destination
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={destinationInput}
+                      onChange={(e) => handleDestinationInput(e.target.value)}
+                      onFocus={() => setShowSuggestions(true)}
+                      className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Type a destination..."
+                    />
+                    {showSuggestions && filteredSuggestions.length > 0 && (
+                      <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-300 rounded-lg shadow-lg z-10">
+                        {filteredSuggestions.map((dest, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => selectDestination(dest.name)}
+                            className="w-full text-left px-4 py-2 hover:bg-blue-50 focus:outline-none first:rounded-t-lg last:rounded-b-lg border-b border-slate-200 last:border-b-0"
+                          >
+                            <div className="font-medium text-slate-900">
+                              {dest.name}
+                            </div>
+                            <div className="text-sm text-slate-500">
+                              {dest.country}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
+
+              {validationError && (
+                <p className="text-sm text-red-600 mb-4">{validationError}</p>
+              )}
+
+              <button
+                onClick={handleSubmitRoute}
+                className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors"
+              >
+                Enter
+              </button>
 
               {/* Warning Box */}
               <div className="mt-4 p-3 bg-gray-50 border border-border rounded-md flex gap-3">
@@ -221,58 +479,115 @@ export default function PassagePlanningPage() {
               <h2 className="text-lg font-semibold text-foreground mb-4">
                 Ports & Anchorages
               </h2>
-              <p className="text-xs text-muted-foreground mb-6">
-                A list of planned stops with their amenities.
-              </p>
-
-              {/* Port Card 1 */}
-              <div className="mb-8 pb-8 border-b border-border last:border-b-0">
-                <h3 className="font-semibold text-foreground mb-4 text-sm">
-                  Funchal, Madeira
+              {/* Amenities Filter */}
+              <div className="mb-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
+                <h3 className="text-sm font-semibold text-slate-900 mb-3">
+                  Filter by Amenities
                 </h3>
-                <div className="space-y-3">
-                  <div className="flex gap-2 text-muted-foreground text-xs">
-                    <span>⚓</span>
-                    <span>🚢</span>
-                    <span>🍽</span>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground font-semibold mb-1">
-                      Coordinates
-                    </p>
-                    <p className="text-xs text-foreground">32.65°N, 16.90°W</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground font-semibold mb-1">
-                      Contact
-                    </p>
-                    <p className="text-xs text-foreground">+351 291 208 600</p>
-                  </div>
+                <div className="flex flex-wrap gap-3">
+                  {ALL_AMENITIES.map((amenity) => (
+                    <label
+                      key={amenity}
+                      className="flex items-center gap-2 cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedAmenities.includes(amenity)}
+                        onChange={() => toggleAmenity(amenity)}
+                        className="w-4 h-4 rounded border-slate-300 cursor-pointer"
+                      />
+                      <span className="text-sm text-slate-700">{amenity}</span>
+                    </label>
+                  ))}
                 </div>
               </div>
 
-              {/* Port Card 2 */}
-              <div>
-                <h3 className="font-semibold text-foreground mb-4 text-sm">
-                  Las Palmas, Canary Is.
-                </h3>
-                <div className="space-y-3">
-                  <div className="flex gap-2 text-muted-foreground text-xs">
-                    <span>⚓</span>
-                    <span>🚢</span>
-                    <span>🍽</span>
+              <p className="text-sm text-slate-600 mb-6">
+                Easy stops with detailed information and amenities.{" "}
+                {filteredPorts.length} result
+                {filteredPorts.length !== 1 ? "s" : ""} found.
+              </p>
+
+              <div className="space-y-6">
+                {filteredPorts.map((port) => (
+                  <div
+                    key={port.id}
+                    className="border border-slate-200 rounded-lg p-4"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <h3 className="font-semibold text-slate-900">
+                          {port.name}
+                        </h3>
+                        <p className="text-sm text-slate-600 mt-1">
+                          {port.distance} • {port.rating} ⭐ ({port.reviews}{" "}
+                          reviews)
+                        </p>
+                      </div>
+                      <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm">
+                        Book Now
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 mb-3">
+                      <div>
+                        <p className="text-sm text-slate-600">Anchorage Fees</p>
+                        <p className="font-medium text-slate-900">
+                          {port.fees}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-slate-600">Booking</p>
+                        <p className="font-medium text-slate-900">
+                          via map listing
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {port.amenities.map((amenity, idx) => (
+                        <span
+                          key={idx}
+                          className="px-3 py-1 bg-slate-100 text-slate-700 rounded-full text-xs font-medium"
+                        >
+                          {amenity}
+                        </span>
+                      ))}
+                    </div>
+                    <button
+                      onClick={() => {
+                        setShowNotesModal(port.id);
+                        setNoteInput(portNotes[port.id] || "");
+                      }}
+                      className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                    >
+                      {portNotes[port.id] ? "View/Edit Note" : "Add Note"}
+                    </button>
                   </div>
+                ))}
+              </div>
+
+              {filteredPorts.length === 0 && (
+                <p className="text-center text-slate-600 py-8">
+                  No ports match the selected amenities. Try adjusting your
+                  filters.
+                </p>
+              )}
+
+              {/* AI Suggestions */}
+              <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <Lightbulb className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-xs text-muted-foreground font-semibold mb-1">
-                      Coordinates
+                    <h4 className="font-semibold text-blue-900 mb-2">
+                      AI Suggestion: Mindelo, Cape Verde
+                    </h4>
+                    <p className="text-sm text-blue-800 mb-3">
+                      Based on your route and preferences for full-service
+                      marinas, Mindelo is an ideal stop for provisioning before
+                      the long Atlantic leg.
                     </p>
-                    <p className="text-xs text-foreground">28.14°N, 15.41°W</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground font-semibold mb-1">
-                      Contact
-                    </p>
-                    <p className="text-xs text-foreground">+34 928 21 64 00</p>
+                    <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium">
+                      Add to Route
+                    </button>
                   </div>
                 </div>
               </div>
@@ -286,21 +601,54 @@ export default function PassagePlanningPage() {
               <h2 className="text-lg font-semibold text-foreground mb-4">
                 PASSAGE PLANNING
               </h2>
-              <div className="space-y-4">
-                <div>
-                  <p className="text-xs text-muted-foreground mb-2">
-                    Overall Progress
-                  </p>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div
-                      className="bg-black h-2 rounded-full"
-                      style={{ width: `${progressPercentage}%` }}
-                    ></div>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    {progressPercentage}%
-                  </p>
+              {/* Progress Bar */}
+              <div className="mb-6">
+                <div className="w-full bg-slate-200 rounded-full h-3 overflow-hidden">
+                  <div
+                    className="bg-blue-600 h-full rounded-full transition-all duration-500"
+                    style={{ width: `${progressPercentage}%` }}
+                  />
                 </div>
+                <div className="text-right mt-2 text-sm font-semibold text-slate-900">
+                  {progressPercentage}%
+                </div>
+              </div>
+
+              {/* Checklist */}
+              <div className="space-y-6">
+                {checklist.map((category, catIdx) => (
+                  <div key={category.category}>
+                    <h3 className="text-xs font-bold text-slate-600 uppercase tracking-wider mb-3">
+                      {category.category}
+                    </h3>
+                    <div className="space-y-2">
+                      {category.items.map((item, itemIdx) => (
+                        <label
+                          key={item.id}
+                          className="flex items-center gap-3 cursor-pointer group"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={item.checked}
+                            onChange={() =>
+                              toggleChecklistItem(catIdx, itemIdx)
+                            }
+                            className="w-4 h-4 rounded border-slate-300 cursor-pointer"
+                          />
+                          <span
+                            className={`text-sm ${
+                              item.checked
+                                ? "text-slate-400 line-through"
+                                : "text-slate-700 group-hover:text-slate-900"
+                            }`}
+                          >
+                            {item.label}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
 
               {/* Attention */}
@@ -329,154 +677,60 @@ export default function PassagePlanningPage() {
 
             {/* Ask AI Planner */}
             <section className="bg-white rounded-lg border border-border p-6">
-              <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-                <span className="w-5 h-5 bg-accent text-black rounded-full flex items-center justify-center flex-shrink-0">
-                  ★
+              <div className="flex items-center gap-2 mb-3">
+                <Lightbulb className="w-4 h-4 text-blue-600" />
+                <span className="font-semibold text-slate-900 text-sm">
+                  Ask AI Planner
                 </span>
-                Ask AI Planner
-              </h2>
-              <p className="text-xs text-muted-foreground mb-3">
-                Any tips for clearing customs in Bridgetown?
-              </p>
-              <div className="bg-accent text-black p-3 rounded-md mb-4">
-                <p className="text-xs leading-relaxed">
-                  Of course! Ensure you have your ship&apos;s documentation,
-                  completed customs declaration form, proof of ownership (Bill
-                  of Sale), and valid ID. Show any completed customs declaration
-                  form ready. Pre-gate entry through customs is located at...
-                </p>
               </div>
-              <form onSubmit={handleSendMessage} className="flex gap-2">
+
+              {/* Chat Box */}
+              <div className="bg-white rounded-lg border border-slate-200 h-40 flex flex-col mb-3">
+                <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                  {chatMessages.length === 0 ? (
+                    <p className="text-xs text-slate-500 text-center mt-16">
+                      Start asking questions about your journey...
+                    </p>
+                  ) : (
+                    chatMessages.map((msg) => (
+                      <div
+                        key={msg.id}
+                        className={`flex ${
+                          msg.user ? "justify-end" : "justify-start"
+                        }`}
+                      >
+                        <div
+                          className={`max-w-xs px-3 py-2 rounded-lg text-xs ${
+                            msg.user
+                              ? "bg-blue-600 text-white"
+                              : "bg-slate-200 text-slate-900"
+                          }`}
+                        >
+                          {msg.text}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                  <div ref={chatEndRef} />
+                </div>
+              </div>
+
+              {/* Chat Input */}
+              <div className="flex gap-2">
                 <input
                   type="text"
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
-                  placeholder="Ask about your route..."
-                  className="flex-1 px-3 py-2 text-xs border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-accent"
+                  onKeyPress={(e) => e.key === "Enter" && handleSendMessage()}
+                  placeholder="Ask anything..."
+                  className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <button
-                  type="submit"
-                  className="px-3 py-2 bg-accent text-black rounded-md hover:bg-accent/90 transition"
+                  onClick={handleSendMessage}
+                  className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                 >
-                  <Send className="w-4 h-4" />
+                  <Send className="w-3 h-3" />
                 </button>
-              </form>
-            </section>
-
-            {/* Preparation Checklist */}
-            <section className="bg-white rounded-lg border border-border p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-sm font-semibold text-foreground">
-                  Preparation Checklist
-                </h2>
-                <span className="text-xs font-semibold text-orange-600">
-                  {checkedItems}/{totalItems} critical
-                </span>
-              </div>
-
-              {/* Regulatory Compliance */}
-              <div className="mb-6">
-                <p className="text-xs font-semibold text-foreground mb-2">
-                  REGULATORY COMPLIANCE
-                </p>
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer">
-                    <input
-                      type="checkbox"
-                      className="w-4 h-4"
-                      checked={checklist.passport}
-                      onChange={() => handleChecklistChange("passport")}
-                    />
-                    <span>Valid Passport to Ship&apos;s Papers</span>
-                  </label>
-                  <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer">
-                    <input
-                      type="checkbox"
-                      className="w-4 h-4"
-                      checked={checklist.visas}
-                      onChange={() => handleChecklistChange("visas")}
-                    />
-                    <span>Visas / Permits</span>
-                    <span className="text-orange-600 text-xs font-semibold ml-auto">
-                      In Progress
-                    </span>
-                  </label>
-                  <div className="flex gap-1 text-xs text-muted-foreground ml-6 mt-1">
-                    <span>📄 Documents</span>
-                    <span>🔔 Reminders</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Route Planning */}
-              <div className="mb-6 pb-6 border-b border-border">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs font-semibold text-foreground">
-                    ROUTE PLANNING
-                  </p>
-                  <span className="text-orange-600 text-xs font-semibold">
-                    High-Priority
-                  </span>
-                </div>
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer">
-                    <input
-                      type="checkbox"
-                      className="w-4 h-4"
-                      checked={checklist.weather}
-                      onChange={() => handleChecklistChange("weather")}
-                    />
-                    <span>Weather & Routing Analysis</span>
-                  </label>
-                  <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer">
-                    <input
-                      type="checkbox"
-                      className="w-4 h-4"
-                      checked={checklist.charts}
-                      onChange={() => handleChecklistChange("charts")}
-                    />
-                    <span>Navigate Charts & Reading</span>
-                  </label>
-                </div>
-              </div>
-
-              {/* Destination Prep */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs font-semibold text-foreground">
-                    DESTINATION PREP
-                  </p>
-                  <span className="text-accent text-xs font-semibold">
-                    Important
-                  </span>
-                </div>
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer">
-                    <input
-                      type="checkbox"
-                      className="w-4 h-4"
-                      checked={checklist.provisioning}
-                      onChange={() => handleChecklistChange("provisioning")}
-                    />
-                    <span>Provisioning & Supplies</span>
-                  </label>
-                  <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer">
-                    <input
-                      type="checkbox"
-                      className="w-4 h-4"
-                      checked={checklist.anchorages}
-                      onChange={() => handleChecklistChange("anchorages")}
-                    />
-                    <span>Anchorages & Ports Research</span>
-                    <span className="text-xs text-muted-foreground ml-auto">
-                      1 Planned Step
-                    </span>
-                  </label>
-                  <div className="flex gap-1 text-xs text-muted-foreground ml-6 mt-1">
-                    <span>🗺️ Map Vistr</span>
-                    <span>📝 My Notes</span>
-                  </div>
-                </div>
               </div>
             </section>
           </div>
