@@ -80,7 +80,6 @@ const FORM_SUMMARIES: Record<FormType, { title: string; fields: Array<{ name: st
     title: 'Goals & priorities',
     fields: [
       {name: 'primaryGoals', label: 'Primary goals'},
-      {name: 'biggestChallenge', label: 'Biggest challenge'},
     ],
   },
   concerns_challenges: {
@@ -92,11 +91,64 @@ const FORM_SUMMARIES: Record<FormType, { title: string; fields: Array<{ name: st
   },
 };
 
+const GREETING_TEXT =
+  "Hi there! I'm " +
+  ASSISTANT_NAME +
+  ", and I'm thrilled to be your sailing preparation companion. I'll be with you every step of the way—from planning your journey to helping you stay on track as you prepare. Together, we'll make sure you're ready for the adventure ahead!";
+
+const GREETING_SUBTEXT =
+  "Let's start by getting to know you and your boat. This will only take a few minutes, and I'll be right here with you throughout. Ready to begin?";
+
+type TypewriterTextProps = {
+  text: string;
+  className?: string;
+  onComplete?: () => void;
+};
+
+const TypewriterText = ({ text, className, onComplete }: TypewriterTextProps) => {
+  const [visibleChars, setVisibleChars] = useState(0);
+
+  // Reset when text or start flag changes
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setVisibleChars(0);
+  }, [text]);
+
+  useEffect(() => {
+    if (visibleChars >= text.length) {
+      if (onComplete) {
+        onComplete();
+      }
+      return;
+    }
+
+    const id = typeof window !== 'undefined'
+      ? window.setInterval(() => {
+          setVisibleChars((prev) => Math.min(prev + 2, text.length));
+        }, 20)
+      : null;
+
+    return () => {
+      if (id !== null) {
+        window.clearInterval(id);
+      }
+    };
+  }, [visibleChars, text.length, onComplete]);
+
+  return (
+    <p className={className} aria-label={text}>
+      <span aria-hidden="true">{text.slice(0, visibleChars)}</span>
+    </p>
+  );
+};
+
 export default function OnboardingPage() {
   const router = useRouter();
   const [collectedData, setCollectedData] = useState<Record<string, any>>({});
   const [currentFormType, setCurrentFormType] = useState<FormType | null>(null);
   const [isOnboardingComplete, setIsOnboardingComplete] = useState(false);
+  const [isGreetingDone, setIsGreetingDone] = useState(false);
+  const [isGreetingSubtextDone, setIsGreetingSubtextDone] = useState(false);
   const [onboardingError, setOnboardingError] = useState<string | null>(null);
 
   const collectedDataRef = useRef(collectedData);
@@ -157,7 +209,7 @@ export default function OnboardingPage() {
         // Try to parse JSON from anywhere in the message (not just the end)
         // Look for JSON objects that contain either "formType" or "action" (for completion)
         let jsonMatch = fullText.match(/\{[\s\S]*"(?:formType|action)"[\s\S]*\}/);
-        
+
         // If no match found, try checking the last line (common pattern for AI responses)
         if (!jsonMatch) {
           const lines = fullText.split('\n');
@@ -166,7 +218,7 @@ export default function OnboardingPage() {
             jsonMatch = [lastLine];
           }
         }
-        
+
         if (i == messages.length-1) console.log(jsonMatch);
         if (jsonMatch) {
           try {
@@ -313,16 +365,27 @@ export default function OnboardingPage() {
       <Conversation className="flex-1">
         <ConversationContent className="mx-auto max-w-4xl px-4 py-6">
           <div className="mb-6 space-y-6 text-center">
+            <div className="flex items-center justify-center gap-2 mb-4">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                <Anchor className="h-5 w-5" />
+              </div>
+            </div>
             <div className="space-y-3">
               <h1 className="text-3xl font-semibold tracking-tight">Welcome to Knot Ready!</h1>
-              <p className="text-lg text-muted-foreground">
-                Hi there! I&apos;m {ASSISTANT_NAME}, and I&apos;m thrilled to be your sailing preparation companion. I&apos;ll be with you every step of the way—from planning your journey to helping you stay on track as you prepare. Together, we&apos;ll make sure you&apos;re ready for the adventure ahead!
-              </p>
-              <p className="text-muted-foreground">
-                Let&apos;s start by getting to know you and your boat. This will only take a few minutes, and I&apos;ll be right here with you throughout. Ready to begin?
-              </p>
+              <TypewriterText
+                text={GREETING_TEXT}
+                className="text-lg text-muted-foreground"
+                onComplete={() => setIsGreetingDone(true)}
+              />
+              {isGreetingDone && (
+                <TypewriterText
+                  text={GREETING_SUBTEXT}
+                  className="text-muted-foreground"
+                  onComplete={() => setIsGreetingSubtextDone(true)}
+                />
+              )}
             </div>
-            {messages.length === 0 && (
+            {messages.length === 0 && isGreetingDone && isGreetingSubtextDone && (
               <Button
                 onClick={handleGetStarted}
                 size="lg"
@@ -344,25 +407,12 @@ export default function OnboardingPage() {
             </div>
           )}
 
-          {/* not provide stop option now as it onboarding process is fast */}
-          {/*{(status === 'submitted' || status === 'streaming') && (*/}
-          {/*  <Message from="assistant">*/}
-          {/*    <MessageContent>*/}
-          {/*      <div className="flex items-center gap-2 text-muted-foreground">*/}
-          {/*        <Loader size={16}/>*/}
-          {/*        <span className="text-sm">Assistant is thinking…</span>*/}
-          {/*      </div>*/}
-          {/*      <Button*/}
-          {/*        variant="ghost"*/}
-          {/*        size="sm"*/}
-          {/*        className="mt-2"*/}
-          {/*        onClick={() => stop()}*/}
-          {/*      >*/}
-          {/*        Stop*/}
-          {/*      </Button>*/}
-          {/*    </MessageContent>*/}
-          {/*  </Message>*/}
-          {/*)}*/}
+          {(status === 'submitted' || status === 'streaming') && !isOnboardingComplete && (
+            <div className="mt-4 flex items-center gap-2 text-muted-foreground text-sm">
+              <Loader size={16} />
+              <span>First Mate is charting your next step…</span>
+            </div>
+          )}
 
           {error && (
             <div className="flex items-start gap-3 w-full">

@@ -36,6 +36,23 @@ function isValidDate(date: Date | undefined) {
   return !isNaN(date.getTime());
 }
 
+// Parse a stored ISO-like date string (yyyy-MM-dd) as a local date,
+// avoiding timezone shifts from the Date(string) constructor.
+function parseStoredDate(value?: string): Date | undefined {
+  if (!value) return undefined;
+  const parts = value.split('-');
+  if (parts.length !== 3) return undefined;
+
+  const [yearStr, monthStr, dayStr] = parts;
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  const day = Number(dayStr);
+
+  if (!year || !month || !day) return undefined;
+
+  return new Date(year, month - 1, day);
+}
+
 export function DatePicker({
   value,
   onChange,
@@ -44,7 +61,7 @@ export function DatePicker({
   className,
 }: DatePickerProps) {
   const [open, setOpen] = React.useState(false);
-  const date = value ? new Date(value) : undefined;
+  const date = parseStoredDate(value);
   const [month, setMonth] = React.useState<Date | undefined>(date || new Date());
   const [inputValue, setInputValue] = React.useState(formatDate(date));
 

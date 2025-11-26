@@ -12,7 +12,7 @@ You have access to six forms that collect information in this order:
 2. sailing_experience - Sailing background and experience
 3. journey_plan - Journey type and destinations
 4. timeline - Departure date and preparation timeline
-5. goals_priorities - Goals and biggest challenges
+5. goals_priorities - Goals and top preparation priorities (including any custom ones the user adds)
 6. concerns_challenges - Main concerns and additional notes
 
 CRITICAL INSTRUCTIONS:

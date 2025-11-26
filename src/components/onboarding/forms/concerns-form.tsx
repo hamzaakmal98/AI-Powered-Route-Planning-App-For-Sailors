@@ -1,17 +1,31 @@
-import { useState } from 'react';
+import { z } from 'zod';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { Form } from '@/components/ui/form';
 
 import { OnboardingFormProps } from './types';
 import { SelectButton } from './select-button';
 
-type ConcernsValues = {
-  mainConcerns: string[];
-  additionalConcerns: string;
-};
+const concernsSchema = z
+  .object({
+    mainConcerns: z.array(z.string()),
+    additionalConcerns: z.string(),
+  })
+  .refine(
+    (data) => data.mainConcerns.length > 0 || data.additionalConcerns.trim().length > 0,
+    {
+      message: 'Please pick at least one concern or share something in the notes.',
+      // use a root-level error instead of a specific field so we can show a form-wide message
+      path: ['root'],
+    },
+  );
+
+type ConcernsValues = z.infer<typeof concernsSchema>;
 
 const concernOptions = [
   'Mechanical failures',
@@ -29,24 +43,33 @@ export function ConcernsForm({
   onSubmit,
   isSubmitting,
 }: OnboardingFormProps<ConcernsValues>) {
-  const [values, setValues] = useState<ConcernsValues>({
-    mainConcerns: initialValues?.mainConcerns ?? [],
-    additionalConcerns: initialValues?.additionalConcerns ?? '',
+  const form = useForm<ConcernsValues>({
+    resolver: zodResolver(concernsSchema),
+    defaultValues: {
+      mainConcerns: initialValues?.mainConcerns ?? [],
+      additionalConcerns: initialValues?.additionalConcerns ?? '',
+    },
   });
 
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    watch,
+    formState: { errors, isSubmitting: isFormSubmitting },
+  } = form;
+
+  const values = watch();
+
   const toggleConcern = (concern: string) => {
-    setValues((prev) => {
-      const exists = prev.mainConcerns.includes(concern);
-      return {
-        ...prev,
-        mainConcerns: exists ? prev.mainConcerns.filter((c) => c !== concern) : [...prev.mainConcerns, concern],
-      };
-    });
+    const current = values.mainConcerns ?? [];
+    const exists = current.includes(concern);
+    const next = exists ? current.filter((c) => c !== concern) : [...current, concern];
+    setValue('mainConcerns', next, { shouldValidate: true });
   };
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    onSubmit(values);
+  const onValidSubmit = (data: ConcernsValues) => {
+    onSubmit(data);
   };
 
   return (
@@ -56,9 +79,10 @@ export function ConcernsForm({
         <CardDescription>We’ll address fears head-on so nothing catches you off guard.</CardDescription>
       </CardHeader>
       <CardContent>
-        <form className="space-y-6" onSubmit={handleSubmit}>
+        <Form {...form}>
+          <form className="space-y-6" onSubmit={handleSubmit(onValidSubmit)}>
           <div className="space-y-3">
-            <Label className="text-muted-foreground">What's on your mind?</Label>
+            <Label className="text-muted-foreground">What&apos;s on your mind?</Label>
             <div className="grid gap-2 md:grid-cols-2">
               {concernOptions.map((concern) => (
                 <SelectButton
@@ -77,17 +101,21 @@ export function ConcernsForm({
             <Textarea
               id="additionalConcerns"
               rows={3}
-              value={values.additionalConcerns}
               placeholder="Use this space to tell us anything that's keeping you from feeling ready."
               className="rounded-2xl"
-              onChange={(event) => setValues((prev) => ({ ...prev, additionalConcerns: event.target.value }))}
+              {...register('additionalConcerns')}
             />
           </div>
 
-          <Button type="submit" className="w-full" disabled={isSubmitting}>
-            {isSubmitting ? 'Saving...' : 'Finish onboarding'}
-          </Button>
-        </form>
+          {errors.root && (
+            <p className="text-xs text-destructive mt-1">{errors.root.message}</p>
+          )}
+
+            <Button type="submit" className="w-full" disabled={isSubmitting || isFormSubmitting}>
+              {isSubmitting || isFormSubmitting ? 'Saving...' : 'Finish onboarding'}
+            </Button>
+          </form>
+        </Form>
       </CardContent>
     </Card>
   );
