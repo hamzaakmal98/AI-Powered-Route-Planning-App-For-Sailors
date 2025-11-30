@@ -25,22 +25,11 @@ model User {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  // // Journey and boat information
-  // boatType        String?
-  // boatLength      Float?
-  // experienceLevel String? // e.g., "Beginner", "Intermediate", "Advanced"
-  // journeyPlan     String? // Description of planned journey
-  // departureDate   DateTime? // Target departure date
-
   // Relations
-  // connect oauth accounts
-  accounts Account[]
-  // tasks            Task[]
-  // domainProgress   DomainProgress[]
-  // executionLevels  ExecutionLevel[]
-  // executionRecords ExecutionRecord[]
-  // // activities       Activity[]
-  // verifications    Verification[]
+  accounts          Account[]
+  tasks             Task[]
+  domainProgress    DomainProgress[]
+  executionProgress ExecutionProgress[]
 
   @@map("users")
 }
@@ -63,175 +52,69 @@ model Account {
   @@map("accounts")
 }
 
-// // Preparation domains (Boat Maintenance, Budget Management, etc.)
-// enum DomainType {
-//   BOAT_MAINTENANCE
-//   BUDGET_MANAGEMENT
-//   WEATHER_ROUTING
-//   SKILL_BUILDING
-//   PASSAGE_PLANNING
-//   SAFETY_SYSTEMS
-//   TIMELINE_MANAGEMENT
-// }
-//
-// // Task status
-// enum TaskStatus {
-//   LOCKED
-//   READY
-//   IN_PROGRESS
-//   COMPLETED
-// }
-//
-// // Domain progress tracking
-// model DomainProgress {
-//   id         Int        @id @default(autoincrement())
-//   userId     String
-//   user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-//   domain     DomainType
-//   progress   Int        @default(0) // 0-100 percentage
-//   difficulty String? // e.g., "2.81/5" for Boat Maintenance
-//   updatedAt  DateTime   @updatedAt
-//
-//   @@unique([userId, domain])
-//   @@index([userId])
-// }
-//
-// // Tasks/Priorities - the next 3-5 priorities for the user
-// model Task {
-//   id     Int    @id @default(autoincrement())
-//   userId String
-//   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-//
-//   // Task details
-//   title       String
-//   description String?
-//   domain      DomainType
-//   priority    Int // 1-5, where 1 is highest priority
-//   status      TaskStatus @default(LOCKED)
-//   progress    Int        @default(0) // 0-100 percentage
-//
-//   // Time estimates
-//   estimatedTime String? // e.g., "2-3 hours", "1 day"
-//
-//   // Task metadata
-//   createdAt   DateTime  @default(now())
-//   updatedAt   DateTime  @updatedAt
-//   startedAt   DateTime?
-//   completedAt DateTime?
-//
-//   @@index([userId, priority])
-//   @@index([userId, status])
-//   @@index([userId, domain])
-// }
-//
-// // Execution levels (Day Sails, Overnights, Multi-day Passages)
-// enum ExecutionLevelType {
-//   DAY_SAILS
-//   OVERNIGHTS
-//   MULTI_DAY_PASSAGES
-// }
-//
-// // Execution progress tracking
-// model ExecutionLevel {
-//   id         Int                @id @default(autoincrement())
-//   userId     String
-//   user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-//   level      ExecutionLevelType
-//   unlocked   Boolean            @default(false)
-//   required   Int // Number of executions required
-//   completed  Int                @default(0)
-//   unlockedAt DateTime?
-//   createdAt  DateTime           @default(now())
-//   updatedAt  DateTime           @updatedAt
-//
-//   // Relations
-//   records ExecutionRecord[]
-//
-//   @@unique([userId, level])
-//   @@index([userId])
-// }
-//
-// // Individual execution records (each day sail, overnight, etc.)
-// model ExecutionRecord {
-//   id               Int            @id @default(autoincrement())
-//   userId           String
-//   user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-//   executionLevelId Int
-//   executionLevel   ExecutionLevel @relation(fields: [executionLevelId], references: [id], onDelete: Cascade)
-//
-//   // Record details
-//   title       String?
-//   description String?
-//   date        DateTime
-//   location    String?
-//
-//   // Verification
-//   verified   Boolean   @default(false)
-//   verifiedAt DateTime?
-//
-//   createdAt DateTime @default(now())
-//   updatedAt DateTime @updatedAt
-//
-//   // Relations
-//   verifications Verification[]
-//
-//   @@index([userId])
-//   @@index([executionLevelId])
-// }
-//
-// // Verification submissions (photos/videos)
-// model Verification {
-//   id                Int              @id @default(autoincrement())
-//   userId            String
-//   user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-//   executionRecordId Int?
-//   executionRecord   ExecutionRecord? @relation(fields: [executionRecordId], references: [id], onDelete: Cascade)
-//
-//   // Verification details
-//   type        String // "photo" or "video"
-//   url         String // URL to the uploaded file
-//   description String?
-//
-//   // Status
-//   approved   Boolean   @default(false)
-//   approvedAt DateTime?
-//
-//   createdAt DateTime @default(now())
-//   updatedAt DateTime @updatedAt
-//
-//   @@index([userId])
-//   @@index([executionRecordId])
-// }
-//
-// // Activity log for recent activity section
-// enum ActivityType {
-//   TASK_COMPLETED
-//   TASK_STARTED
-//   TASK_UNLOCKED
-//   EXECUTION_COMPLETED
-//   EXECUTION_UNLOCKED
-//   VERIFICATION_SUBMITTED
-//   VERIFICATION_APPROVED
-//   ACHIEVEMENT_UNLOCKED
-//   DOMAIN_PROGRESS_UPDATED
-// }
+// Task status enum
+enum TaskStatus {
+  locked
+  ready
+  in_progress
+  completed
 
-// model Activity {
-//   id     Int    @id @default(autoincrement())
-//   userId String
-//   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-//
-//   type        ActivityType
-//   title       String // e.g., "Completed", "Unlocked", "Started"
-//   description String // e.g., "Engine service checklist"
-//
-//   // Related entity IDs (optional)
-//   taskId           Int?
-//   domain           DomainType?
-//   executionLevelId Int?
-//
-//   createdAt DateTime @default(now())
-//
-//   @@index([userId])
-//   @@index([userId, createdAt])
-// }
+  @@map("task_status")
+}
+
+// Task model - represents user's preparation priorities/tasks
+model Task {
+  id            String     @id @default(uuid())
+  userId        String
+  user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Task details
+  domain        String     // Boat Maintenance, Skill Building, Weather Routing, Safety Systems, Budget Management, Passage Planning, Timeline Management
+  task          String     // Task description
+  priority      Int        // 1-5, where 1 is highest priority
+  estimatedTime String?    // e.g., "2-3 hours", "1 day"
+  status        TaskStatus @default(ready)
+  progress      Int        @default(0) // 0-100 percentage
+  
+  // Timestamps
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+  startedAt     DateTime?  @map("started_at")
+  completedAt   DateTime?  @map("completed_at")
+
+  @@index([userId, priority])
+  @@index([userId, status])
+  @@index([userId, domain])
+  @@map("tasks")
+}
+
+// Domain progress tracking
+model DomainProgress {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String   // Domain name: Boat Maintenance, Skill Building, etc.
+  progress  Int      @default(0) // 0-100 percentage
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@map("domain_progress")
+}
+
+// Execution progress tracking (skill mastery levels)
+model ExecutionProgress {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  level     String   // Day Sails, Overnights, Multi-day Passages
+  status    String   // ready, locked
+  completed Int      @default(0)
+  required  Int      // Number of completions required
+  unlocked  Boolean  @default(false)
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, level])
+  @@index([userId])
+  @@map("execution_progress")
+}
