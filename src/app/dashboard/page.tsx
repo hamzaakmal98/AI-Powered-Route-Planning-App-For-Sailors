@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -12,6 +13,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
 import { honoClient } from "@/lib/hono-client";
 import {
   Anchor,
@@ -32,6 +34,9 @@ import {
   LogOut,
   Loader2,
   MessageSquare,
+  Edit2,
+  Check,
+  X,
 } from "lucide-react";
 import { TaskChat } from "@/components/task-chat";
 
@@ -40,6 +45,9 @@ export default function DashboardPage() {
   const [isChecking, setIsChecking] = useState(true);
   const [isLoadingTasks, setIsLoadingTasks] = useState(true);
   const [showTaskChat, setShowTaskChat] = useState(false);
+  const [editingDomain, setEditingDomain] = useState<string | null>(null);
+  const [editingProgress, setEditingProgress] = useState<number>(0);
+  const [savingDomain, setSavingDomain] = useState<string | null>(null);
   const [tasksData, setTasksData] = useState<{
     priorities: Array<{
       id: string;
@@ -112,6 +120,65 @@ export default function DashboardPage() {
       }
     } catch (error) {
       console.error('Error refreshing tasks:', error);
+    }
+  };
+
+  const handleEditDomain = (domainName: string, currentProgress: number) => {
+    setEditingDomain(domainName);
+    setEditingProgress(currentProgress);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingDomain(null);
+    setEditingProgress(0);
+  };
+
+  const handleSaveDomainProgress = async (domainName: string) => {
+    if (editingProgress < 0 || editingProgress > 100) {
+      alert('Progress must be between 0 and 100');
+      return;
+    }
+
+    setSavingDomain(domainName);
+    try {
+      const response = await honoClient.api.user['domain-progress'].$patch({
+        json: {
+          domainName,
+          progress: editingProgress,
+        },
+      });
+
+      let result: any = {};
+      try {
+        const text = await response.text();
+        if (text) {
+          result = JSON.parse(text);
+        }
+      } catch {
+        // If parsing fails, result remains empty object
+      }
+
+      if (!response.ok || ('error' in result && result.error)) {
+        const errorMessage = ('error' in result ? result.error : undefined) || 'Failed to update domain progress';
+        toast.error(errorMessage);
+      } else {
+        // Refresh tasks data to get updated domain progress
+        const userResponse = await honoClient.api.user.$get();
+        if (userResponse.ok) {
+          const user = await userResponse.json();
+          if (user.tasksData) {
+            setTasksData(user.tasksData);
+          }
+        }
+        setEditingDomain(null);
+        setEditingProgress(0);
+        toast.success(`Updated ${domainName} progress to ${editingProgress}%`);
+      }
+    } catch (error) {
+      console.error('Error saving domain progress:', error);
+      toast.error('Failed to save domain progress. Please try again.');
+    } finally {
+      setSavingDomain(null);
     }
   };
 
@@ -397,13 +464,69 @@ export default function DashboardPage() {
                         </CardTitle>
                       </div>
                     </div>
-                    <span className="text-2xl font-bold">
-                      {domain.progress}%
-                    </span>
+                    {editingDomain === domain.name ? (
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={editingProgress}
+                          onChange={(e) => setEditingProgress(Number(e.target.value))}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !savingDomain) {
+                              e.preventDefault();
+                              handleSaveDomainProgress(domain.name);
+                            }
+                          }}
+                          className="w-20 h-8 text-center"
+                          disabled={savingDomain === domain.name}
+                        />
+                        <span className="text-2xl font-bold">%</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0"
+                          onClick={() => handleSaveDomainProgress(domain.name)}
+                          disabled={savingDomain === domain.name}
+                        >
+                          {savingDomain === domain.name ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Check className="h-4 w-4" />
+                          )}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0"
+                          onClick={handleCancelEdit}
+                          disabled={savingDomain === domain.name}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <span className="text-2xl font-bold">
+                          {domain.progress}%
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0"
+                          onClick={() => handleEditDomain(domain.name, domain.progress)}
+                        >
+                          <Edit2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <Progress value={domain.progress} className="h-2" />
+                  <Progress 
+                    value={editingDomain === domain.name ? editingProgress : domain.progress} 
+                    className="h-2" 
+                  />
                 </CardContent>
               </Card>
             ))}

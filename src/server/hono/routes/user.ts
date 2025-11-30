@@ -59,8 +59,8 @@ Return a JSON object with progress estimates (0-100) for each of these domains: 
 
   try {
     const result = await generateText({
-      model: process.env.NODE_ENV === 'production' 
-        ? openai('gpt-3.5-turbo') 
+      model: process.env.NODE_ENV === 'production'
+        ? openai('gpt-3.5-turbo')
         : ollama('qwen3:8b'),
       system: systemPrompt,
       prompt: userPrompt,
@@ -305,78 +305,143 @@ const app = new Hono()
     }
   })
 
-  .post("/tasks", async (c) => {
+  // .post("/tasks", async (c) => {
+  //   const userId = await ExtractUserIdFromCookie(c)
+  //   if (!userId) {
+  //     return c.text("Unauthorized", 401)
+  //   }
+  //
+  //   let payload: {task?: any} = {}
+  //   try {
+  //     payload = await c.req.json()
+  //   } catch (error) {
+  //     return c.json({error: "Invalid payload"}, 400)
+  //   }
+  //
+  //   const newTask = payload.task
+  //
+  //   if (!newTask || typeof newTask !== 'object') {
+  //     return c.json({error: "Invalid task payload"}, 400)
+  //   }
+  //
+  //   try {
+  //     // Create a new task
+  //     const task = await prisma.task.create({
+  //       data: {
+  //         userId: userId,
+  //         domain: newTask.domain,
+  //         task: newTask.task,
+  //         priority: newTask.priority,
+  //         estimatedTime: newTask.estimatedTime,
+  //         status: newTask.status || 'ready',
+  //         progress: newTask.progress || 0,
+  //       },
+  //     })
+  //
+  //     // Get updated tasks list
+  //     const user = await prisma.user.findUnique({
+  //       where: {id: userId},
+  //       include: {
+  //         tasks: {
+  //           orderBy: { priority: 'asc' },
+  //         },
+  //         domainProgress: true,
+  //       },
+  //     })
+  //
+  //     if (!user) {
+  //       return c.json({error: "User not found"}, 404)
+  //     }
+  //
+  //     // Transform relational data to match the expected format
+  //     const tasksData = {
+  //       priorities: user.tasks.map((t) => ({
+  //         id: t.id,
+  //         domain: t.domain,
+  //         task: t.task,
+  //         priority: t.priority,
+  //         estimatedTime: t.estimatedTime,
+  //         status: t.status,
+  //         progress: t.progress,
+  //       })),
+  //       domainProgress: user.domainProgress.map((dp) => ({
+  //         name: dp.name,
+  //         progress: dp.progress,
+  //       })),
+  //     }
+  //
+  //     return c.json({
+  //       success: true,
+  //       tasksData: tasksData,
+  //     })
+  //   } catch (error) {
+  //     console.error("Error adding task:", error)
+  //     return c.json({error: "Failed to add task"}, 500)
+  //   }
+  // })
+
+  .patch("/domain-progress", async (c) => {
     const userId = await ExtractUserIdFromCookie(c)
     if (!userId) {
       return c.text("Unauthorized", 401)
     }
 
-    let payload: {task?: any} = {}
+    let payload: {domainName?: string; progress?: number} = {}
     try {
       payload = await c.req.json()
     } catch (error) {
       return c.json({error: "Invalid payload"}, 400)
     }
 
-    const newTask = payload.task
+    const { domainName, progress } = payload
 
-    if (!newTask || typeof newTask !== 'object') {
-      return c.json({error: "Invalid task payload"}, 400)
+    if (!domainName || typeof progress !== 'number') {
+      return c.json({error: "Invalid payload: domainName and progress (0-100) are required"}, 400)
+    }
+
+    if (progress < 0 || progress > 100) {
+      return c.json({error: "Progress must be between 0 and 100"}, 400)
     }
 
     try {
-      // Create a new task
-      const task = await prisma.task.create({
-        data: {
-          userId: userId,
-          domain: newTask.domain,
-          task: newTask.task,
-          priority: newTask.priority,
-          estimatedTime: newTask.estimatedTime,
-          status: newTask.status || 'ready',
-          progress: newTask.progress || 0,
-        },
-      })
-
-      // Get updated tasks list
-      const user = await prisma.user.findUnique({
-        where: {id: userId},
-        include: {
-          tasks: {
-            orderBy: { priority: 'asc' },
+      // Update domain progress using upsert to handle both create and update
+      await prisma.domainProgress.upsert({
+        where: {
+          userId_name: {
+            userId: userId,
+            name: domainName,
           },
-          domainProgress: true,
+        },
+        update: {
+          progress: Math.round(progress),
+        },
+        create: {
+          userId: userId,
+          name: domainName,
+          progress: Math.round(progress),
         },
       })
 
-      if (!user) {
-        return c.json({error: "User not found"}, 404)
-      }
-
-      // Transform relational data to match the expected format
-      const tasksData = {
-        priorities: user.tasks.map((t) => ({
-          id: t.id,
-          domain: t.domain,
-          task: t.task,
-          priority: t.priority,
-          estimatedTime: t.estimatedTime,
-          status: t.status,
-          progress: t.progress,
-        })),
-        domainProgress: user.domainProgress.map((dp) => ({
-          name: dp.name,
-          progress: dp.progress,
-        })),
-      }
+      // Get updated domain progress
+      const updatedDomainProgress = await prisma.domainProgress.findUnique({
+        where: {
+          userId_name: {
+            userId: userId,
+            name: domainName,
+          },
+        },
+      })
 
       return c.json({
         success: true,
-        tasksData: tasksData,
+        domainProgress: updatedDomainProgress ? {
+          name: updatedDomainProgress.name,
+          progress: updatedDomainProgress.progress,
+        } : null,
       })
     } catch (error) {
-      console.error("Error adding task:", error)
-      return c.json({error: "Failed to add task"}, 500)
+      console.error("Error updating domain progress:", error)
+      return c.json({error: "Failed to update domain progress"}, 500)
     }
   })
 
