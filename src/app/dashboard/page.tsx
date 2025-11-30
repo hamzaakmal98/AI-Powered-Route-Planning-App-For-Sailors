@@ -25,7 +25,6 @@ import {
   Zap,
   Shield,
   Clock,
-  ChevronRight,
   Lock,
   Unlock,
   User,
@@ -54,13 +53,6 @@ export default function DashboardPage() {
     domainProgress?: Array<{
       name: string;
       progress: number;
-    }>;
-    executionProgress?: Array<{
-      level: string;
-      status: string;
-      completed: number;
-      required: number;
-      unlocked: boolean;
     }>;
   } | null>(null);
 
@@ -412,24 +404,6 @@ export default function DashboardPage() {
                 </CardHeader>
                 <CardContent>
                   <Progress value={domain.progress} className="h-2" />
-                  {domain.name === "Passage Planning" ? (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="w-full mt-3"
-                      onClick={() =>
-                        router.push("dashboard/passage-planning")
-                      }
-                    >
-                      View Details
-                      <ChevronRight className="ml-2 h-4 w-4" />
-                    </Button>
-                  ) : (
-                    <Button variant="ghost" size="sm" className="w-full mt-3">
-                      View Details
-                      <ChevronRight className="ml-2 h-4 w-4" />
-                    </Button>
-                  )}
                 </CardContent>
               </Card>
             ))}

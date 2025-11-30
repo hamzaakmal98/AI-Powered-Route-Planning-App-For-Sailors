@@ -29,7 +29,6 @@ model User {
   accounts          Account[]
   tasks             Task[]
   domainProgress    DomainProgress[]
-  executionProgress ExecutionProgress[]
 
   @@map("users")
 }
@@ -102,19 +101,3 @@ model DomainProgress {
   @@map("domain_progress")
 }
 
-// Execution progress tracking (skill mastery levels)
-model ExecutionProgress {
-  id        String   @id @default(uuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  level     String   // Day Sails, Overnights, Multi-day Passages
-  status    String   // ready, locked
-  completed Int      @default(0)
-  required  Int      // Number of completions required
-  unlocked  Boolean  @default(false)
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@unique([userId, level])
-  @@index([userId])
-  @@map("execution_progress")
-}

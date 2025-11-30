@@ -8,7 +8,6 @@ export const formTypeSchema = z.enum([
   'journey_plan',
   'timeline',
   'goals_priorities',
-  'concerns_challenges',
 ]);
 
 export type FormType = z.infer<typeof formTypeSchema>;

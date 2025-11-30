@@ -9,7 +9,6 @@ import {FormType} from '@/app/api/onboarding/schema';
 import {honoClient} from '@/lib/hono-client';
 import {
   BoatInfoForm,
-  ConcernsForm,
   GoalsForm,
   JourneyPlanForm,
   SailingExperienceForm,
@@ -37,7 +36,6 @@ const FORM_COMPONENTS: Record<FormType, React.FC<OnboardingFormProps<any>>> = {
   journey_plan: JourneyPlanForm,
   timeline: TimelineForm,
   goals_priorities: GoalsForm,
-  concerns_challenges: ConcernsForm,
 };
 
 const ASSISTANT_NAME = 'First Mate';
@@ -80,13 +78,6 @@ const FORM_SUMMARIES: Record<FormType, { title: string; fields: Array<{ name: st
     title: 'Goals & priorities',
     fields: [
       {name: 'primaryGoals', label: 'Primary goals'},
-    ],
-  },
-  concerns_challenges: {
-    title: 'Concerns',
-    fields: [
-      {name: 'mainConcerns', label: 'Top concerns'},
-      {name: 'additionalConcerns', label: 'Extra notes'},
     ],
   },
 };
@@ -147,6 +138,7 @@ export default function OnboardingPage() {
   const [collectedData, setCollectedData] = useState<Record<string, any>>({});
   const [currentFormType, setCurrentFormType] = useState<FormType | null>(null);
   const [isOnboardingComplete, setIsOnboardingComplete] = useState(false);
+  const [isOnboardingFailed, setIsOnboardingFailed] = useState(false);
   const [isGreetingDone, setIsGreetingDone] = useState(false);
   const [isGreetingSubtextDone, setIsGreetingSubtextDone] = useState(false);
   const [onboardingError, setOnboardingError] = useState<string | null>(null);
@@ -173,6 +165,7 @@ export default function OnboardingPage() {
     async (formValues: Record<string, any>) => {
       try {
         setOnboardingError(null);
+        setIsOnboardingFailed(false);
         const response = await honoClient.api.user.onboarded.$post({
           json: {formsData: formValues},
         });
@@ -186,6 +179,8 @@ export default function OnboardingPage() {
       } catch (err) {
         console.error('Error marking as onboarded:', err);
         setOnboardingError('Unable to finish onboarding right now. Please try again.');
+        setIsOnboardingFailed(true);
+        setCurrentFormType(null); // Stop showing forms
       }
     },
     [router],
@@ -193,7 +188,7 @@ export default function OnboardingPage() {
 
   // Parse messages to get form type and completion status
   useEffect(() => {
-    if (isOnboardingComplete) {
+    if (isOnboardingComplete || isOnboardingFailed) {
       return;
     }
 
@@ -240,7 +235,7 @@ export default function OnboardingPage() {
         }
       }
     }
-  }, [messages, markAsOnboarded, isOnboardingComplete]);
+  }, [messages, markAsOnboarded, isOnboardingComplete, isOnboardingFailed]);
 
   const FormComponent = currentFormType ? FORM_COMPONENTS[currentFormType] : null;
 
@@ -253,6 +248,11 @@ export default function OnboardingPage() {
    * @param values - The values collected from the form.
    */
   const handleFormSubmit = (type: FormType) => (values: Record<string, any>) => {
+    // Stop processing if onboarding has failed
+    if (isOnboardingFailed) {
+      return;
+    }
+
     const updatedData = {...collectedData, ...values};
     setCollectedData(updatedData);
     // Don't clear form type immediately - let the AI response set the next one
@@ -397,7 +397,7 @@ export default function OnboardingPage() {
           </div>
           {messages.map((message, index) => renderMessage(message, index))}
 
-          {FormComponent && !isOnboardingComplete && currentFormType && status === 'ready' && (
+          {FormComponent && !isOnboardingComplete && !isOnboardingFailed && currentFormType && status === 'ready' && (
             <div className="mt-4">
               <FormComponent
                 key={currentFormType}
@@ -407,7 +407,7 @@ export default function OnboardingPage() {
             </div>
           )}
 
-          {(status === 'submitted' || status === 'streaming') && !isOnboardingComplete && (
+          {(status === 'submitted' || status === 'streaming') && !isOnboardingComplete && !isOnboardingFailed && (
             <div className="mt-4 flex items-center gap-2 text-muted-foreground text-sm">
               <Loader size={16} />
               <span>First Mate is charting your next step…</span>
@@ -445,7 +445,11 @@ export default function OnboardingPage() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => markAsOnboarded(collectedDataRef.current)}
+                      onClick={() => {
+                        setIsOnboardingFailed(false);
+                        setOnboardingError(null);
+                        markAsOnboarded(collectedDataRef.current);
+                      }}
                     >
                       Try again
                     </Button>

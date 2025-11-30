@@ -29,6 +29,7 @@ const journeyTypes = [
 ];
 
 const journeyDurations = [
+  'Less than one month',
   '1-6 months',
   '6-12 months',
   '1-2 years',

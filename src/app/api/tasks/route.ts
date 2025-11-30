@@ -23,7 +23,6 @@ function getUserContextToolFactory(userId: string) {
               orderBy: { priority: 'asc' },
             },
             domainProgress: true,
-            executionProgress: true,
           },
         } as any) as any;
 
@@ -41,7 +40,6 @@ function getUserContextToolFactory(userId: string) {
           onboarding: {},
           tasks: user.tasks || [],
           domainProgress: user.domainProgress || [],
-          executionProgress: user.executionProgress || [],
         };
 
         // Extract onboarding information
