@@ -38,6 +38,7 @@ import {
   Check,
   X,
 } from "lucide-react";
+import {logout} from "@/server/actions/oauth";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -197,12 +198,10 @@ export default function DashboardPage() {
   // Icon mapping for domains
   const domainIconMap: Record<string, typeof Shield> = {
     "Boat Maintenance": Shield,
-    "Skill Building": TrendingUp,
     "Weather Routing": Compass,
     "Safety Systems": Zap,
     "Budget Management": Target,
     "Passage Planning": Route,
-    "Timeline Management": Calendar,
   };
 
   const domainProgressData = tasksData?.domainProgress || [
@@ -210,18 +209,10 @@ export default function DashboardPage() {
       name: "Boat Maintenance",
       progress: 0,
     },
-    {
-      name: "Skill Building",
-      progress: 0,
-    },
     { name: "Weather Routing", progress: 0 },
     { name: "Safety Systems", progress: 0 },
     { name: "Budget Management", progress: 0 },
     { name: "Passage Planning", progress: 0 },
-    {
-      name: "Timeline Management",
-      progress: 0,
-    },
   ];
 
   const domainProgress = domainProgressData.map((domain) => ({
@@ -251,7 +242,11 @@ export default function DashboardPage() {
                 <Settings className="h-4 w-4 mr-2" />
                 Settings
               </Button>
-              <Button variant="ghost" size="sm">
+              <Button variant="ghost" size="sm" onClick={() => {
+                logout().then(() => {
+                  router.replace('/login');
+                })
+              }}>
                 <LogOut className="h-4 w-4" />
               </Button>
             </div>
@@ -515,9 +510,9 @@ export default function DashboardPage() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <Progress 
-                    value={editingDomain === domain.name ? editingProgress : domain.progress} 
-                    className="h-2" 
+                  <Progress
+                    value={editingDomain === domain.name ? editingProgress : domain.progress}
+                    className="h-2"
                   />
                 </CardContent>
               </Card>

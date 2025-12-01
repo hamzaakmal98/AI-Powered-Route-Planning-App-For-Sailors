@@ -88,7 +88,7 @@ const GREETING_TEXT =
   ", and I'm thrilled to be your sailing preparation companion. I'll be with you every step of the way—from planning your journey to helping you stay on track as you prepare. Together, we'll make sure you're ready for the adventure ahead!";
 
 const GREETING_SUBTEXT =
-  "Let's start by getting to know you and your boat. This will only take a few minutes, and I'll be right here with you throughout. Ready to begin?";
+  "Let's start by letting me know more about you. This will only take a few minutes, and I'll be right here with you throughout. Ready to begin?";
 
 type TypewriterTextProps = {
   text: string;

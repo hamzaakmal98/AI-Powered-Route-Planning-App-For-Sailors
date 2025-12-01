@@ -15,11 +15,23 @@ function getUserContextToolFactory(userId: string) {
     inputSchema: z.object({}).describe('No parameters needed - fetches all user context'),
     execute: async () => {
       try {
-        // Fetch user data from database
+        // Fetch user data from database with all domain-specific task tables
         const user = await prisma.user.findUnique({
           where: { id: userId },
           include: {
-            tasks: {
+            boatMaintenanceTasks: {
+              orderBy: { priority: 'asc' },
+            },
+            weatherRoutingTasks: {
+              orderBy: { priority: 'asc' },
+            },
+            safetySystemsTasks: {
+              orderBy: { priority: 'asc' },
+            },
+            budgetManagementTasks: {
+              orderBy: { priority: 'asc' },
+            },
+            passagePlanningTasks: {
               orderBy: { priority: 'asc' },
             },
             domainProgress: true,
@@ -35,10 +47,19 @@ function getUserContextToolFactory(userId: string) {
 
         const onboardingData = user.onboardingData as any;
 
+        // Combine all domain-specific tasks into a single array with domain field
+        const allTasks = [
+          ...(user.boatMaintenanceTasks || []).map((t: any) => ({ ...t, domain: 'Boat Maintenance' })),
+          ...(user.weatherRoutingTasks || []).map((t: any) => ({ ...t, domain: 'Weather Routing' })),
+          ...(user.safetySystemsTasks || []).map((t: any) => ({ ...t, domain: 'Safety Systems' })),
+          ...(user.budgetManagementTasks || []).map((t: any) => ({ ...t, domain: 'Budget Management' })),
+          ...(user.passagePlanningTasks || []).map((t: any) => ({ ...t, domain: 'Passage Planning' })),
+        ].sort((a, b) => a.priority - b.priority);
+
         // Build comprehensive user context
         const context: any = {
           onboarding: {},
-          tasks: user.tasks || [],
+          tasks: allTasks,
           domainProgress: user.domainProgress || [],
         };
 
@@ -64,7 +85,7 @@ function getUserContextToolFactory(userId: string) {
         return {
           success: true,
           context: context,
-          summary: `User has ${user.tasks.length} existing tasks across ${user.domainProgress.length} preparation domains.`,
+          summary: `User has ${allTasks.length} existing tasks across ${user.domainProgress.length} preparation domains.`,
         };
       } catch (error) {
         console.error('Error fetching user context:', error);
@@ -78,6 +99,18 @@ function getUserContextToolFactory(userId: string) {
   });
 }
 
+// Helper function to get the correct Prisma model for a domain
+function getTaskModelForDomain(domain: string) {
+  const domainModelMap: Record<string, string> = {
+    'Boat Maintenance': 'boatMaintenanceTask',
+    'Weather Routing': 'weatherRoutingTask',
+    'Safety Systems': 'safetySystemsTask',
+    'Budget Management': 'budgetManagementTask',
+    'Passage Planning': 'passagePlanningTask',
+  };
+  return domainModelMap[domain] || null;
+}
+
 // Factory function to create the createTask tool with userId access
 function createTaskToolFactory(userId: string) {
   return tool({
@@ -85,12 +118,10 @@ function createTaskToolFactory(userId: string) {
     inputSchema: z.object({
       domain: z.enum([
         'Boat Maintenance',
-        'Skill Building',
         'Weather Routing',
         'Safety Systems',
         'Budget Management',
         'Passage Planning',
-        'Timeline Management'
       ]).describe('The domain this task belongs to'),
       task: z.string().describe('Clear, actionable task description'),
       priority: z.number().min(1).max(5).describe('Priority level (1 is highest)'),
@@ -98,11 +129,18 @@ function createTaskToolFactory(userId: string) {
     }),
     execute: async ({ domain, task, priority, estimatedTime }) => {
       try {
-        // Save task directly to database
-        const newTask = await (prisma as any).task.create({
+        const modelName = getTaskModelForDomain(domain);
+        if (!modelName) {
+          return {
+            success: false,
+            message: `Unknown domain: ${domain}`,
+          };
+        }
+
+        // Save task directly to database using the domain-specific model
+        const newTask = await (prisma as any)[modelName].create({
           data: {
             userId: userId,
-            domain,
             task,
             priority,
             estimatedTime,
@@ -116,7 +154,7 @@ function createTaskToolFactory(userId: string) {
           message: `Task "${task}" has been created successfully in the ${domain} domain.`,
           task: {
             id: newTask.id,
-            domain: newTask.domain,
+            domain: domain,
             task: newTask.task,
             priority: newTask.priority,
             estimatedTime: newTask.estimatedTime,
@@ -177,14 +215,42 @@ IMPORTANT - After Domain Selection:
 - Ask questions naturally in conversation, one or two at a time, and wait for the user's response before asking more.
 - Once you have all the information (domain, task description, priority, estimated time), use the createTask tool to create the task.
 
+SPECIAL FOCUS - Passage Planning Domain (Route Planning):
+When the user selects "Passage Planning" domain, you MUST focus specifically on Route Planning tasks, which is Step 2 of the passage planning process. Route Planning involves:
+- Drawing the intended track on charts (paper or electronic)
+- Setting waypoints at safe, logical points (avoiding hazards, ensuring clear margins)
+- Planning courses & distances between waypoints
+- Calculating tidal offsets and predicted set & drift
+- Estimating ETA and total passage time
+- Choosing safe abort points and alternative ports
+- Planning night sailing considerations (lights, buoys, dangers)
+- Considering traffic zones and required rules/communications
+- Fuel and provisioning plan (if motor-sailing)
+
+When suggesting Passage Planning tasks, focus on these route planning activities. Ask about:
+- Their departure and destination ports
+- The intended route or general direction
+- Whether they have charts (paper or electronic)
+- Their experience with navigation and waypoint planning
+- Any known hazards or areas of concern along the route
+- Whether they'll be sailing at night
+- Their fuel capacity and range (if motor-sailing)
+
+Create tasks that are specific to route planning, such as:
+- "Plot waypoints for passage from [Port A] to [Port B], ensuring safe margins from known hazards"
+- "Calculate tidal offsets and set & drift for the planned route"
+- "Identify and mark safe abort points and alternative ports along the route"
+- "Plan night sailing considerations including navigation lights and buoy identification"
+- "Review traffic separation schemes and required VHF communications for the route"
+- "Estimate ETA and total passage time based on boat speed and conditions"
+- "Create fuel and provisioning plan for motor-sailing portions of the route"
+
 Available domains:
 - Boat Maintenance
-- Skill Building
 - Weather Routing
 - Safety Systems
 - Budget Management
-- Passage Planning
-- Timeline Management
+- Passage Planning (focus on Route Planning - Step 2)
 
 When creating tasks:
 - Consider the user's boat type and size when estimating time and suggesting tasks
@@ -192,6 +258,7 @@ When creating tasks:
 - Consider the user's journey type and goals when selecting the domain
 - Consider the user's concerns and timeline when prioritizing tasks
 - Check existing tasks to avoid duplication and ensure proper sequencing
+- For Passage Planning: Focus on route planning activities, not appraisal, execution, or monitoring phases
 
 After calling the 'createTask' tool, the task will be automatically saved to the database. Confirm with the user that the task has been added and offer further assistance.
 Keep your messages conversational and helpful. Celebrate their progress!`,
@@ -228,14 +295,9 @@ export async function POST(req: Request) {
 
     const userId = payload.userId;
 
-    // Get user's onboarding data and tasks for context
+    // Verify the user exists (task and onboarding context are fetched via tools)
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      include: {
-        tasks: {
-          orderBy: { priority: 'asc' },
-        },
-      },
     });
 
     if (!user) {

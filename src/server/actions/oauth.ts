@@ -14,5 +14,5 @@ export async function oauthRedirect(provider: string, scenario: string) {
 
 export async function logout() {
   const cookieStore = await cookies()
-  cookieStore.delete(process.env.JWT_AUTH_COOKIE_NAME!)
+  cookieStore.delete(process.env.JWT_COOKIE_NAME!)
 }

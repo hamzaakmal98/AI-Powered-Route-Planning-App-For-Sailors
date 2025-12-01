@@ -26,9 +26,13 @@ model User {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
-  accounts          Account[]
-  tasks             Task[]
-  domainProgress    DomainProgress[]
+  accounts                Account[]
+  boatMaintenanceTasks    BoatMaintenanceTask[]     @relation("BoatMaintenanceTasks")
+  weatherRoutingTasks     WeatherRoutingTask[]      @relation("WeatherRoutingTasks")
+  safetySystemsTasks      SafetySystemsTask[]       @relation("SafetySystemsTasks")
+  budgetManagementTasks   BudgetManagementTask[]   @relation("BudgetManagementTasks")
+  passagePlanningTasks    PassagePlanningTask[]     @relation("PassagePlanningTasks")
+  domainProgress          DomainProgress[]
 
   @@map("users")
 }
@@ -61,14 +65,16 @@ enum TaskStatus {
   @@map("task_status")
 }
 
-// Task model - represents user's preparation priorities/tasks
-model Task {
+// Base task fields - common to all domain-specific task tables
+// Each domain-specific task table will have these fields plus domain-specific fields
+
+// Boat Maintenance tasks
+model BoatMaintenanceTask {
   id            String     @id @default(uuid())
   userId        String
-  user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user          User       @relation("BoatMaintenanceTasks", fields: [userId], references: [id], onDelete: Cascade)
   
   // Task details
-  domain        String     // Boat Maintenance, Skill Building, Weather Routing, Safety Systems, Budget Management, Passage Planning, Timeline Management
   task          String     // Task description
   priority      Int        // 1-5, where 1 is highest priority
   estimatedTime String?    // e.g., "2-3 hours", "1 day"
@@ -83,8 +89,107 @@ model Task {
 
   @@index([userId, priority])
   @@index([userId, status])
-  @@index([userId, domain])
-  @@map("tasks")
+  @@map("boat_maintenance_tasks")
+}
+
+// Weather Routing tasks
+model WeatherRoutingTask {
+  id            String     @id @default(uuid())
+  userId        String
+  user          User       @relation("WeatherRoutingTasks", fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Task details
+  task          String     // Task description
+  priority      Int        // 1-5, where 1 is highest priority
+  estimatedTime String?    // e.g., "2-3 hours", "1 day"
+  status        TaskStatus @default(ready)
+  progress      Int        @default(0) // 0-100 percentage
+  
+  // Timestamps
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+  startedAt     DateTime?  @map("started_at")
+  completedAt   DateTime?  @map("completed_at")
+
+  @@index([userId, priority])
+  @@index([userId, status])
+  @@map("weather_routing_tasks")
+}
+
+// Safety Systems tasks
+model SafetySystemsTask {
+  id            String     @id @default(uuid())
+  userId        String
+  user          User       @relation("SafetySystemsTasks", fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Task details
+  task          String     // Task description
+  priority      Int        // 1-5, where 1 is highest priority
+  estimatedTime String?    // e.g., "2-3 hours", "1 day"
+  status        TaskStatus @default(ready)
+  progress      Int        @default(0) // 0-100 percentage
+  
+  // Timestamps
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+  startedAt     DateTime?  @map("started_at")
+  completedAt   DateTime?  @map("completed_at")
+
+  @@index([userId, priority])
+  @@index([userId, status])
+  @@map("safety_systems_tasks")
+}
+
+// Budget Management tasks
+model BudgetManagementTask {
+  id            String     @id @default(uuid())
+  userId        String
+  user          User       @relation("BudgetManagementTasks", fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Task details
+  task          String     // Task description
+  priority      Int        // 1-5, where 1 is highest priority
+  estimatedTime String?    // e.g., "2-3 hours", "1 day"
+  status        TaskStatus @default(ready)
+  progress      Int        @default(0) // 0-100 percentage
+  
+  // Timestamps
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+  startedAt     DateTime?  @map("started_at")
+  completedAt   DateTime?  @map("completed_at")
+
+  @@index([userId, priority])
+  @@index([userId, status])
+  @@map("budget_management_tasks")
+}
+
+// Passage Planning tasks - focused on Route Planning (step 2)
+model PassagePlanningTask {
+  id            String     @id @default(uuid())
+  userId        String
+  user          User       @relation("PassagePlanningTasks", fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Task details
+  task          String     // Task description (focused on route planning activities)
+  priority      Int        // 1-5, where 1 is highest priority
+  estimatedTime String?    // e.g., "2-3 hours", "1 day"
+  status        TaskStatus @default(ready)
+  progress      Int        @default(0) // 0-100 percentage
+  
+  // Route planning specific fields (optional, can be added later if needed)
+  // waypointCount    Int?     // Number of waypoints planned
+  // routeDistance    Float?   // Total route distance in nautical miles
+  
+  // Timestamps
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+  startedAt     DateTime?  @map("started_at")
+  completedAt   DateTime?  @map("completed_at")
+
+  @@index([userId, priority])
+  @@index([userId, status])
+  @@map("passage_planning_tasks")
 }
 
 // Domain progress tracking
@@ -92,7 +197,7 @@ model DomainProgress {
   id        String   @id @default(uuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name      String   // Domain name: Boat Maintenance, Skill Building, etc.
+  name      String   // Domain name: Boat Maintenance, Weather Routing, etc.
   progress  Int      @default(0) // 0-100 percentage
   updatedAt DateTime @updatedAt @map("updated_at")
 

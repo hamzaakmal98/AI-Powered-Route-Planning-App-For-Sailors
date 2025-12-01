@@ -15,24 +15,20 @@ async function generateDomainProgressEstimates(
 ): Promise<Record<string, number>> {
   const defaultDomains = [
     'Boat Maintenance',
-    'Skill Building',
     'Weather Routing',
     'Safety Systems',
     'Budget Management',
     'Passage Planning',
-    'Timeline Management',
   ];
 
   const systemPrompt = `You are First Mate, Knot Ready's sailing preparation assistant. Your task is to analyze a sailor's onboarding information and estimate their current progress percentage (0-100) for each preparation domain.
 
 Available domains:
 - Boat Maintenance: Physical condition of the boat, systems, equipment readiness
-- Skill Building: Sailing skills, certifications, experience level
 - Weather Routing: Knowledge and tools for weather planning and routing
 - Safety Systems: Safety equipment, emergency procedures, safety protocols
 - Budget Management: Financial planning, cost estimates, budget tracking
 - Passage Planning: Route planning, navigation, passage preparation
-- Timeline Management: Preparation timeline, scheduling, readiness timeline
 
 Based on the onboarding data provided, estimate the user's current progress in each domain. Consider:
 - Their experience level and certifications
@@ -43,12 +39,10 @@ Based on the onboarding data provided, estimate the user's current progress in e
 Return ONLY a valid JSON object with domain names as keys and progress percentages (0-100 integers) as values. Example:
 {
   "Boat Maintenance": 25,
-  "Skill Building": 60,
   "Weather Routing": 30,
   "Safety Systems": 40,
   "Budget Management": 20,
-  "Passage Planning": 15,
-  "Timeline Management": 35
+  "Passage Planning": 15
 }`;
 
   const userPrompt = `Analyze this onboarding data and estimate progress for each domain:
@@ -110,12 +104,24 @@ const app = new Hono()
     const user = await prisma.user.findUnique({
       where: {id: userId},
       include: {
-        tasks: {
+        boatMaintenanceTasks: {
+          orderBy: { priority: 'asc' },
+        },
+        weatherRoutingTasks: {
+          orderBy: { priority: 'asc' },
+        },
+        safetySystemsTasks: {
+          orderBy: { priority: 'asc' },
+        },
+        budgetManagementTasks: {
+          orderBy: { priority: 'asc' },
+        },
+        passagePlanningTasks: {
           orderBy: { priority: 'asc' },
         },
         domainProgress: true,
       }
-    })
+    } as any) as any
 
     if (!user) {
       return c.text("Unauthorized", 401)
@@ -124,12 +130,10 @@ const app = new Hono()
     // Default domains if none exist
     const defaultDomains = [
       'Boat Maintenance',
-      'Skill Building',
       'Weather Routing',
       'Safety Systems',
       'Budget Management',
       'Passage Planning',
-      'Timeline Management',
     ]
 
     // Ensure domain progress exists for existing users (backfill)
@@ -152,9 +156,18 @@ const app = new Hono()
       }
     }
 
+    // Combine all domain-specific tasks into a single array with domain field
+    const allTasks = [
+      ...((user as any).boatMaintenanceTasks || []).map((t: any) => ({ ...t, domain: 'Boat Maintenance' })),
+      ...((user as any).weatherRoutingTasks || []).map((t: any) => ({ ...t, domain: 'Weather Routing' })),
+      ...((user as any).safetySystemsTasks || []).map((t: any) => ({ ...t, domain: 'Safety Systems' })),
+      ...((user as any).budgetManagementTasks || []).map((t: any) => ({ ...t, domain: 'Budget Management' })),
+      ...((user as any).passagePlanningTasks || []).map((t: any) => ({ ...t, domain: 'Passage Planning' })),
+    ].sort((a, b) => a.priority - b.priority);
+
     // Transform relational data to match the expected format
     const tasksData = {
-      priorities: user.tasks.map((task) => ({
+      priorities: allTasks.map((task) => ({
         id: task.id,
         domain: task.domain,
         task: task.task,
@@ -163,8 +176,8 @@ const app = new Hono()
         status: task.status,
         progress: task.progress,
       })),
-      domainProgress: user.domainProgress.length > 0
-        ? user.domainProgress.map((dp) => ({
+      domainProgress: ((user as any).domainProgress || []).length > 0
+        ? ((user as any).domainProgress || []).map((dp: any) => ({
             name: dp.name,
             progress: dp.progress,
           }))
@@ -204,12 +217,10 @@ const app = new Hono()
       // Default domain progress entries
       const defaultDomains = [
         'Boat Maintenance',
-        'Skill Building',
         'Weather Routing',
         'Safety Systems',
         'Budget Management',
         'Passage Planning',
-        'Timeline Management',
       ]
 
       // Update user first
@@ -220,9 +231,6 @@ const app = new Hono()
           onboardingData: onboardingData,
         },
         include: {
-          tasks: {
-            orderBy: { priority: 'asc' },
-          },
           domainProgress: true,
         },
       })
@@ -242,9 +250,6 @@ const app = new Hono()
       const userWithProgress = await prisma.user.findUnique({
         where: {id: userId},
         include: {
-          tasks: {
-            orderBy: { priority: 'asc' },
-          },
           domainProgress: true,
         },
       })
@@ -276,28 +281,10 @@ const app = new Hono()
           console.error('Error updating domain progress estimates:', error);
         });
 
-      // Transform relational data to match the expected format
-      const transformedTasksData = {
-        priorities: finalUser.tasks.map((task) => ({
-          id: task.id,
-          domain: task.domain,
-          task: task.task,
-          priority: task.priority,
-          estimatedTime: task.estimatedTime,
-          status: task.status,
-          progress: task.progress,
-        })),
-        domainProgress: finalUser.domainProgress.map((dp) => ({
-          name: dp.name,
-          progress: dp.progress,
-        })),
-      }
-
       return c.json({
         success: true,
         onboarded: finalUser.onboarded,
         onboardingData: finalUser.onboardingData,
-        tasksData: transformedTasksData,
       })
     } catch (error) {
       console.error("Error updating onboarded status:", error)

@@ -64,8 +64,7 @@ export default function AboutPage() {
                 <h3 className="font-semibold mb-2">Task Generation</h3>
                 <p className="text-sm text-muted-foreground">
                   First Mate helps you create and organize tasks across seven key preparation domains:
-                  Boat Maintenance, Skill Building, Weather Routing, Safety Systems, Budget Management,
-                  Passage Planning, and Timeline Management.
+                  Boat Maintenance, Weather Routing, Safety Systems, Budget Management, and Passage Planning.
                 </p>
               </div>
               <div>

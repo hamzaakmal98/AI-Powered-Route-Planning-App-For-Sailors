@@ -5,12 +5,10 @@ import { SelectButton } from '@/components/onboarding/forms/select-button';
 
 const DOMAINS = [
   'Boat Maintenance',
-  'Skill Building',
   'Weather Routing',
   'Safety Systems',
   'Budget Management',
   'Passage Planning',
-  'Timeline Management',
 ] as const;
 
 export type TaskDomain = typeof DOMAINS[number];

@@ -250,10 +250,8 @@ export default function LandingPage() {
               { icon: Shield, title: "Boat Maintenance", difficulty: "2.81/5", description: "Keep your vessel seaworthy and reliable" },
               { icon: Target, title: "Budget Management", description: "Plan and track expenses for your journey" },
               { icon: Compass, title: "Weather Routing", description: "Navigate safely with weather intelligence" },
-              { icon: TrendingUp, title: "Skill Building", description: "Progressive skill development across all areas" },
               { icon: Route, title: "Passage Planning", description: "Plan routes, waypoints, and navigation" },
               { icon: Zap, title: "Safety Systems", description: "Emergency procedures and safety equipment" },
-              { icon: Calendar, title: "Timeline Management", description: "Coordinate preparation with your departure date" },
             ].map((domain, index) => (
               <Card key={index}>
                 <CardHeader>
