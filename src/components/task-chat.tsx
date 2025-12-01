@@ -2,52 +2,47 @@
 
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Popover, PopoverContent, PopoverAnchor } from '@/components/ui/popover';
-import { Textarea } from '@/components/ui/textarea';
-import { Command, CommandList, CommandGroup, CommandItem, CommandEmpty } from '@/components/ui/command';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Anchor, X, CopyIcon, RefreshCcwIcon, ArrowDown, Loader2 } from 'lucide-react';
+import { Anchor, X, CopyIcon, RefreshCcwIcon, ArrowDown, Loader2, ArrowRight, ExternalLink, AlertCircle } from 'lucide-react';
+import Link from 'next/link';
 import { Streamdown } from 'streamdown';
 import { StickToBottom, useStickToBottomContext } from 'use-stick-to-bottom';
-import { cn } from '@/lib/utils';
 import { DomainSelector, TaskDomain } from '@/components/task-chat/domain-selector';
+import { cn } from '@/lib/utils';
+import {
+  PromptInput,
+  PromptInputBody,
+  PromptInputFooter,
+  PromptInputSubmit,
+  PromptInputTextarea,
+  PromptInputHeader,
+  PromptInputAttachments,
+  PromptInputAttachment,
+  PromptInputTools,
+  PromptInputActionMenu,
+  PromptInputActionMenuTrigger,
+  PromptInputActionMenuContent,
+  PromptInputActionAddAttachments,
+  PromptInputSpeechButton,
+  type PromptInputMessage,
+} from '@/components/ai-elements/prompt-input';
 
 const ASSISTANT_NAME = 'First Mate';
-
-const DOMAIN_COMMANDS = {
-  '/boat': 'Boat Maintenance',
-  '/maintenance': 'Boat Maintenance',
-  '/skill': 'Skill Building',
-  '/weather': 'Weather Routing',
-  '/safety': 'Safety Systems',
-  '/budget': 'Budget Management',
-  '/passage': 'Passage Planning',
-  '/timeline': 'Timeline Management',
-  '/help': 'Show available commands',
-} as const;
-
-const QUICK_COMMANDS = [
-  { command: '/boat', description: 'Create a Boat Maintenance task' },
-  { command: '/skill', description: 'Create a Skill Building task' },
-  { command: '/weather', description: 'Create a Weather Routing task' },
-  { command: '/safety', description: 'Create a Safety Systems task' },
-  { command: '/budget', description: 'Create a Budget Management task' },
-  { command: '/passage', description: 'Create a Passage Planning task' },
-  { command: '/timeline', description: 'Create a Timeline Management task' },
-];
 
 interface TaskChatProps {
   onClose: () => void;
   onTaskAdded?: (task: any) => void;
+  fullPage?: boolean; // If true, render as full page instead of modal
 }
 
-export function TaskChat({ onClose, onTaskAdded }: TaskChatProps) {
-  const [showCommands, setShowCommands] = useState(false);
+export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatProps) {
   const [showDomainSelector, setShowDomainSelector] = useState(false);
   const [selectedDomain, setSelectedDomain] = useState<TaskDomain | null>(null);
+  const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { messages, sendMessage, status, error, regenerate } = useChat({
     transport: new DefaultChatTransport({
       api: '/api/tasks',
@@ -64,14 +59,14 @@ export function TaskChat({ onClose, onTaskAdded }: TaskChatProps) {
       const toolCalls = (lastMessage.parts || []).filter(
         (part: any) => part.type === 'tool-call'
       ) as unknown as Array<{ type: 'tool-call'; toolCallId: string; toolName: string }>;
-      
+
       for (const toolCall of toolCalls) {
         if (toolCall.toolName === 'createTask') {
           // Get the tool result for this tool call
           const toolResults = (lastMessage.parts || []).filter(
             (part: any) => part.type === 'tool-result' && part.toolCallId === toolCall.toolCallId
           ) as unknown as Array<{ type: 'tool-result'; toolCallId: string; result: any }>;
-          
+
           for (const result of toolResults) {
             // Tool now saves directly to database, so we just need to notify the parent
             if (result.result?.success && result.result?.task && onTaskAdded) {
@@ -139,11 +134,17 @@ export function TaskChat({ onClose, onTaskAdded }: TaskChatProps) {
           if (jsonData.action === 'showDomainSelector') {
             setShowDomainSelector(true);
             setDomainSelected(false);
+            setIsWaitingForResponse(false); // Stop loading when domain selector appears
             return;
           }
         } catch (e) {
           // Ignore parse errors
         }
+      }
+
+      // If we got any assistant response, stop the loading
+      if (lastMessage && lastMessage.role === 'assistant') {
+        setIsWaitingForResponse(false);
       }
     }
   }, [messages, selectedDomain]);
@@ -153,60 +154,21 @@ export function TaskChat({ onClose, onTaskAdded }: TaskChatProps) {
     setShowDomainSelector(false);
     setDomainSelected(true);
     // Send message to AI with selected domain
-    sendMessage({ 
-      text: `I've selected the ${domain} domain.` 
+    sendMessage({
+      text: `I've selected the ${domain} domain.`
     });
-  };
-
-  const handleCommandSelect = (command: string, clearText?: () => void) => {
-    clearText?.();
-    setShowCommands(false);
-    
-    if (command === '/help') {
-      sendMessage({ text: 'Show me available commands for creating tasks' });
-      return;
-    }
-
-    // For task creation commands, trigger domain selection
-    const domain = DOMAIN_COMMANDS[command as keyof typeof DOMAIN_COMMANDS];
-    if (domain && domain !== 'Show available commands') {
-      // Show domain selector (which will be handled by the AI prompt)
-      sendMessage({ 
-        text: `I want to create a task.` 
-      });
-    }
   };
 
   const handleSubmit = (message: PromptInputMessage) => {
     const hasText = Boolean(message.text?.trim());
     const hasAttachments = Boolean(message.files?.length);
-    
+
     if (!(hasText || hasAttachments)) {
       return;
     }
 
-    // Handle command if it's typed directly
-    const trimmedInput = message.text?.trim() || '';
-    if (trimmedInput.startsWith('/')) {
-      const command = trimmedInput.split(/\s/)[0] as keyof typeof DOMAIN_COMMANDS;
-      if (command in DOMAIN_COMMANDS) {
-        if (command === '/help') {
-          sendMessage({ text: 'Show me available commands for creating tasks' });
-          return;
-        } else {
-          // For task creation commands, trigger domain selection
-          sendMessage({ 
-            text: `I want to create a task.` 
-          });
-          setShowCommands(false);
-          return;
-        }
-      }
-    }
-
     // Regular message
-    sendMessage({ text: trimmedInput, files: message.files });
-    setShowCommands(false);
+    sendMessage({ text: message.text?.trim() || '', files: message.files });
   };
 
   const renderMessage = (message: any, index: number) => {
@@ -218,25 +180,25 @@ export function TaskChat({ onClose, onTaskAdded }: TaskChatProps) {
       messageText = messageText.replace(/\{[\s\S]*"action"[\s\S]*"showDomainSelector"[\s\S]*\}/g, '').trim();
 
       return (
-        <div key={message.id || index} className="group flex items-start gap-4 w-full py-4 px-6 hover:bg-muted/30 transition-colors">
-          <Avatar className="size-7 shrink-0 mt-0.5">
-            <AvatarFallback className="bg-primary text-primary-foreground border border-border">
-              <Anchor className="size-3.5" />
+        <div key={message.id || index} className={cn("group flex items-start gap-4 w-full py-4 hover:bg-muted/20 transition-colors", fullPage ? "px-0" : "px-6")}>
+          <Avatar className="size-8 shrink-0 mt-0.5 ring-2 ring-primary/10">
+            <AvatarFallback className="bg-gradient-to-br from-primary to-primary/80 text-primary-foreground border-2 border-primary/20 shadow-sm">
+              <Anchor className="size-4" />
             </AvatarFallback>
           </Avatar>
           <div className="flex-1 min-w-0 space-y-2">
-            <div className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+            <div className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 text-foreground">
               <Streamdown>{messageText}</Streamdown>
             </div>
             {index === messages.length - 1 && (
-              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity pt-1">
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-7 w-7"
+                        className="h-7 w-7 hover:bg-muted"
                         onClick={() => regenerate()}
                       >
                         <RefreshCcwIcon className="size-3.5" />
@@ -252,7 +214,7 @@ export function TaskChat({ onClose, onTaskAdded }: TaskChatProps) {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-7 w-7"
+                        className="h-7 w-7 hover:bg-muted"
                         onClick={() => {
                           if (messageText) navigator.clipboard.writeText(messageText);
                         }}
@@ -276,9 +238,9 @@ export function TaskChat({ onClose, onTaskAdded }: TaskChatProps) {
     const messageText = textParts.map((part: any) => part.text).join('');
 
     return (
-      <div key={message.id || index} className="flex items-start gap-4 w-full py-4 px-6 hover:bg-muted/30 transition-colors">
+      <div key={message.id || index} className={cn("flex items-start gap-4 w-full py-4 hover:bg-muted/20 transition-colors", fullPage ? "px-0" : "px-6")}>
         <div className="flex-1 min-w-0 ml-auto max-w-[85%]">
-          <div className="rounded-lg bg-muted px-4 py-2.5 text-sm">
+          <div className="rounded-xl bg-primary text-primary-foreground px-4 py-3 text-sm shadow-sm border border-primary/20">
             {messageText}
           </div>
         </div>
@@ -286,56 +248,155 @@ export function TaskChat({ onClose, onTaskAdded }: TaskChatProps) {
     );
   };
 
+  // Calculate progress based on chat state
+  const getProgress = () => {
+    if (!domainSelected) return 0;
+    if (messages.length === 0) return 10;
+    // Progress increases as conversation continues
+    const messageCount = messages.filter((msg: any) => {
+      const textParts = msg.parts?.filter((part: any) => part.type === 'text') || [];
+      const messageText = textParts.map((part: any) => part.text).join('');
+      return !messageText.includes("showDomainSelector") &&
+             !(msg.role === 'user' && messageText.includes("I want to create a task") && !messageText.includes("I've selected the"));
+    }).length;
+    return Math.min(10 + (messageCount * 15), 90);
+  };
+
+  const progress = getProgress();
+  const isProcessing = status === 'submitted' || status === 'streaming';
+
+  const containerClass = fullPage
+    ? "h-full bg-background flex flex-col overflow-hidden"
+    : "fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm";
+
+  const contentClass = fullPage
+    ? "flex-1 flex flex-col w-full h-full overflow-hidden"
+    : "relative w-full max-w-4xl h-[85vh] bg-background border rounded-xl shadow-2xl flex flex-col overflow-hidden";
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-      <div className="relative w-full max-w-4xl h-[85vh] bg-background border rounded-xl shadow-2xl flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b bg-muted/30">
-          <div className="flex items-center gap-3">
-            <Avatar className="size-8">
-              <AvatarFallback className="bg-primary text-primary-foreground border border-border">
-                <Anchor className="size-4" />
-              </AvatarFallback>
-            </Avatar>
-            <div>
-              <h2 className="font-semibold text-base">{ASSISTANT_NAME}</h2>
-              <p className="text-xs text-muted-foreground">Task Generation Assistant</p>
+    <div className={containerClass}>
+      <div className={contentClass}>
+        {/* Header - only show in modal mode */}
+        {!fullPage && (
+          <div className="flex items-center justify-between px-6 py-4 border-b bg-muted/30 shadow-sm">
+            <div className="flex items-center gap-3">
+              <Avatar className="size-8 ring-2 ring-primary/10">
+                <AvatarFallback className="bg-gradient-to-br from-primary to-primary/80 text-primary-foreground border-2 border-primary/20 shadow-sm">
+                  <Anchor className="size-4" />
+                </AvatarFallback>
+              </Avatar>
+              <div>
+                <h2 className="text-base font-semibold tracking-tight">{ASSISTANT_NAME}</h2>
+                <p className="text-xs text-muted-foreground">Task Generation Assistant</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              {/* Progress Indicator */}
+              {domainSelected && (
+                <div className="flex items-center gap-3 px-3 py-1.5 rounded-full bg-muted/50 border border-border/50">
+                  <div className="w-32 h-2 bg-muted rounded-full overflow-hidden shadow-inner">
+                    <div
+                      className="h-full bg-gradient-to-r from-primary to-primary/80 transition-all duration-500 rounded-full shadow-sm"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                  <span className="text-xs font-medium text-foreground min-w-[3.5rem]">
+                    {isProcessing ? (
+                      <span className="flex items-center gap-1.5">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        Processing...
+                      </span>
+                    ) : (
+                      `${Math.round(progress)}%`
+                    )}
+                  </span>
+                </div>
+              )}
+              <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8">
+                <X className="h-4 w-4" />
+              </Button>
             </div>
           </div>
-          <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8">
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
+        )}
 
         {/* Messages */}
         <StickToBottom
-          className="flex-1 overflow-y-auto"
+          className={fullPage ? "flex-1 overflow-y-auto min-h-0 pb-[220px]" : "flex-1 overflow-y-auto pb-[220px]"}
           initial="smooth"
           resize="smooth"
           role="log"
         >
-          <StickToBottom.Content className="flex flex-col">
-            {!domainSelected && messages.length === 0 && !showDomainSelector && (
-              <div className="flex-1 flex items-center justify-center px-6 py-12">
-                <div className="text-center space-y-2 max-w-md">
-                  <p className="text-lg font-medium">Hi! I&apos;m {ASSISTANT_NAME}.</p>
-                  <p className="text-sm text-muted-foreground">
-                    Let&apos;s create a new task! First, I&apos;ll help you select a domain.
-                  </p>
-                </div>
-              </div>
-            )}
-            
-            {!domainSelected && messages.length === 0 && !showDomainSelector && (
-              <div className="px-6 pb-4">
-                <Button
-                  onClick={() => {
-                    sendMessage({ text: 'Hi, I want to create a task.' });
-                  }}
-                  className="w-full"
-                >
-                  Start Creating Task
-                </Button>
+          <StickToBottom.Content className={fullPage ? "flex flex-col items-center w-full" : "flex flex-col"}>
+            <div className={fullPage ? "w-full max-w-3xl flex flex-col" : "w-full flex flex-col"}>
+            {!domainSelected && !showDomainSelector && (
+              <div className={cn("flex-1 flex items-center justify-center py-12", fullPage ? "px-0 w-full" : "px-6")}>
+                {isWaitingForResponse && messages.filter((m: any) => m.role === 'assistant').length === 0 ? (
+                  // Loading indicator
+                  <div className="text-center space-y-4 max-w-lg">
+                    <div className="inline-flex items-center justify-center size-16 rounded-full bg-gradient-to-br from-primary/10 to-primary/5 border-2 border-primary/20 mb-2">
+                      <Avatar className="size-10">
+                        <AvatarFallback className="bg-gradient-to-br from-primary to-primary/80 text-primary-foreground">
+                          <Loader2 className="size-5 animate-spin" />
+                        </AvatarFallback>
+                      </Avatar>
+                    </div>
+                    <div className="space-y-2">
+                      <h3 className="text-xl font-semibold tracking-tight">
+                        {ASSISTANT_NAME} is thinking...
+                      </h3>
+                      <p className="text-sm text-muted-foreground">
+                        Preparing to help you create a task
+                      </p>
+                    </div>
+                    <div className="flex items-center justify-center gap-1 pt-2">
+                      <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0s' }} />
+                      <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
+                      <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
+                    </div>
+                  </div>
+                ) : messages.length === 0 ? (
+                  // Welcome screen - only show when no messages at all
+                  <div className="text-center space-y-6 max-w-lg">
+                    <div className="space-y-3">
+                      <div className="inline-flex items-center justify-center size-16 rounded-full bg-gradient-to-br from-primary/10 to-primary/5 border-2 border-primary/20 mb-2">
+                        <Avatar className="size-10">
+                          <AvatarFallback className="bg-gradient-to-br from-primary to-primary/80 text-primary-foreground">
+                            <Anchor className="size-5" />
+                          </AvatarFallback>
+                        </Avatar>
+                      </div>
+                      <h3 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+                        Hi! I&apos;m {ASSISTANT_NAME}.
+                      </h3>
+                      <p className="text-base text-muted-foreground leading-relaxed">
+                        Let&apos;s create a new task together! I&apos;ll guide you through selecting a domain and crafting the perfect task for your sailing journey.
+                      </p>
+                    </div>
+                    <div className="pt-4">
+                      <Button
+                        onClick={() => {
+                          setIsWaitingForResponse(true);
+                          sendMessage({ text: 'Hi, I want to create a task.' });
+                        }}
+                        size="lg"
+                        disabled={isWaitingForResponse}
+                        className="w-full sm:w-auto px-8 h-12 text-base font-semibold shadow-lg hover:shadow-xl transition-all duration-200 bg-gradient-to-r from-primary to-primary/90 hover:from-primary/90 hover:to-primary/80"
+                      >
+                        {isWaitingForResponse ? (
+                          <>
+                            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                            Generating...
+                          </>
+                        ) : (
+                          <>
+                            Start Creating Task
+                            <ArrowRight className="ml-2 h-5 w-5" />
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             )}
 
@@ -344,7 +405,7 @@ export function TaskChat({ onClose, onTaskAdded }: TaskChatProps) {
               // Filter out messages before domain selection
               const messageTextParts = message.parts?.filter((part: any) => part.type === 'text') || [];
               const messageText = messageTextParts.map((part: any) => part.text).join('');
-              
+
               // Skip messages that are part of domain selection flow
               if (message.role === 'user' && messageText.includes("I want to create a task") && !messageText.includes("I've selected the")) {
                 return null;
@@ -352,19 +413,19 @@ export function TaskChat({ onClose, onTaskAdded }: TaskChatProps) {
               if (message.role === 'assistant' && messageText.includes("showDomainSelector")) {
                 return null;
               }
-              
+
               return renderMessage(message, index);
             })}
 
             {showDomainSelector && (
-              <div className="flex items-start gap-4 w-full py-4 px-6">
-                <Avatar className="size-7 shrink-0 mt-0.5">
-                  <AvatarFallback className="bg-primary text-primary-foreground border border-border">
-                    <Anchor className="size-3.5" />
+              <div className={cn("flex items-start gap-4 w-full py-6", fullPage ? "px-0" : "px-6")}>
+                <Avatar className="size-8 shrink-0 mt-0.5 ring-2 ring-primary/10">
+                  <AvatarFallback className="bg-gradient-to-br from-primary to-primary/80 text-primary-foreground border-2 border-primary/20 shadow-sm">
+                    <Anchor className="size-4" />
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex-1 min-w-0">
-                  <DomainSelector 
+                  <DomainSelector
                     onSelect={handleDomainSelect}
                     isSubmitting={status === 'submitted' || status === 'streaming'}
                   />
@@ -373,45 +434,92 @@ export function TaskChat({ onClose, onTaskAdded }: TaskChatProps) {
             )}
 
             {domainSelected && (status === 'submitted' || status === 'streaming') && (
-              <div className="flex items-start gap-4 w-full py-4 px-6">
-                <Avatar className="size-7 shrink-0 mt-0.5">
-                  <AvatarFallback className="bg-primary text-primary-foreground border border-border">
-                    <Anchor className="size-3.5" />
+              <div className={cn("flex items-start gap-4 w-full py-4", fullPage ? "px-0" : "px-6")}>
+                <Avatar className="size-8 shrink-0 mt-0.5 ring-2 ring-primary/10">
+                  <AvatarFallback className="bg-gradient-to-br from-primary to-primary/80 text-primary-foreground border-2 border-primary/20 shadow-sm">
+                    <Anchor className="size-4" />
                   </AvatarFallback>
                 </Avatar>
-                <div className="flex items-center gap-2 text-muted-foreground text-sm">
-                  <Loader2 className="size-4 animate-spin" />
+                <div className="flex items-center gap-2 text-muted-foreground text-sm bg-muted/50 px-4 py-2 rounded-lg border border-border/50">
+                  <Loader2 className="size-4 animate-spin text-primary" />
                   <span>{ASSISTANT_NAME} is thinking…</span>
                 </div>
               </div>
             )}
 
             {domainSelected && error && (
-              <div className="flex items-start gap-4 w-full py-4 px-6">
-                <Avatar className="size-7 shrink-0 mt-0.5">
-                  <AvatarFallback className="bg-primary text-primary-foreground border border-border">
-                    <Anchor className="size-3.5" />
+              <div className={cn("flex items-start gap-4 w-full py-4", fullPage ? "px-0" : "px-6")}>
+                <Avatar className="size-8 shrink-0 mt-0.5 ring-2 ring-destructive/10">
+                  <AvatarFallback className="bg-destructive/10 text-destructive border-2 border-destructive/20">
+                    <Anchor className="size-4" />
                   </AvatarFallback>
                 </Avatar>
-                <div className="text-sm text-destructive">
+                <div className="text-sm text-destructive bg-destructive/10 px-4 py-2 rounded-lg border border-destructive/20">
                   Something went wrong. Please try again.
                 </div>
               </div>
             )}
+            </div>
           </StickToBottom.Content>
           <ScrollToBottomButton />
         </StickToBottom>
 
         {/* Input - only show after domain is selected */}
         {domainSelected && !showDomainSelector && (
-          <div className="border-t bg-background relative">
-            <TaskChatInput
-              onSubmit={handleSubmit}
-              status={status}
-              showCommands={showCommands}
-              setShowCommands={setShowCommands}
-              handleCommandSelect={handleCommandSelect}
-            />
+          <div className={cn(
+            "fixed bottom-0 left-0 right-0 z-50",
+            fullPage ? "" : "pointer-events-none"
+          )}>
+            <div className="mx-auto max-w-3xl px-4 pb-6 pt-4 pointer-events-auto">
+              <div className="bg-background border border-border rounded-2xl shadow-2xl">
+                <PromptInput onSubmit={handleSubmit} multiple>
+                  <PromptInputHeader>
+                    <PromptInputAttachments>
+                      {(attachment) => <PromptInputAttachment data={attachment} />}
+                    </PromptInputAttachments>
+                  </PromptInputHeader>
+                  <PromptInputBody>
+                    <PromptInputTextarea
+                      ref={textareaRef}
+                      placeholder="Message First Mate..."
+                    />
+                  </PromptInputBody>
+                  <PromptInputFooter>
+                    <PromptInputTools>
+                      <PromptInputActionMenu>
+                        <PromptInputActionMenuTrigger />
+                        <PromptInputActionMenuContent>
+                          <PromptInputActionAddAttachments />
+                        </PromptInputActionMenuContent>
+                      </PromptInputActionMenu>
+                      <PromptInputSpeechButton
+                        textareaRef={textareaRef}
+                      />
+                    </PromptInputTools>
+                    <PromptInputSubmit status={status} />
+                  </PromptInputFooter>
+                </PromptInput>
+              </div>
+              {/* Disclaimer text like ChatGPT */}
+              <div className="mt-3 text-center">
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/50 border border-border/50">
+                  <AlertCircle className="h-3.5 w-3.5 text-muted-foreground" />
+                  <p className="text-xs text-foreground">
+                    First Mate can make mistakes. Check {' '}
+                    <Link
+                      href="/about"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline font-medium inline-flex items-center gap-1"
+                    >
+                      important info
+                      <ExternalLink className="h-3 w-3" />
+                    </Link>
+                    .
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -440,177 +548,3 @@ function ScrollToBottomButton() {
   );
 }
 
-type PromptInputMessage = {
-  text: string;
-  files?: any[];
-};
-
-function TaskChatInput({
-  onSubmit,
-  status,
-  showCommands,
-  setShowCommands,
-  handleCommandSelect,
-}: {
-  onSubmit: (message: PromptInputMessage) => void;
-  status: string;
-  showCommands: boolean;
-  setShowCommands: (show: boolean) => void;
-  handleCommandSelect: (command: string, clearText?: () => void) => void;
-}) {
-  const [text, setText] = useState<string>('');
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const formRef = useRef<HTMLFormElement>(null);
-  
-  // Expose clearText function to parent via handleCommandSelect callback
-  const clearText = () => setText('');
-
-  // Watch for input changes to show/hide commands
-  useEffect(() => {
-    // Show commands when typing '/' or when input starts with '/'
-    if (text === '/' || text.startsWith('/')) {
-      setShowCommands(true);
-    } else if (!text.startsWith('/') && text.length === 0) {
-      // Only close if input is empty and doesn't start with '/'
-      setShowCommands(false);
-    }
-    // Don't auto-close if user is typing after '/' - let them interact with the popover
-  }, [text, setShowCommands]);
-
-  // Auto-resize textarea
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
-    }
-  }, [text]);
-
-  const handleCommandClick = (command: string) => {
-    handleCommandSelect(command, clearText);
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (isDisabled) return;
-
-    onSubmit({ text: text.trim() });
-    setText('');
-    setShowCommands(false);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      formRef.current?.requestSubmit();
-    } else if (e.key === 'Escape') {
-      setShowCommands(false);
-      setText('');
-    }
-  };
-
-  const isDisabled = !text.trim() || status === 'submitted' || status === 'streaming';
-  const isLoading = status === 'submitted' || status === 'streaming';
-
-  return (
-    <div className="relative">
-      <Popover open={showCommands} onOpenChange={(open) => {
-        if (!open) {
-          setShowCommands(false);
-        }
-      }}>
-        <form ref={formRef} onSubmit={handleSubmit} className="relative">
-          <div className="relative flex items-end px-4 py-3">
-            <PopoverAnchor asChild className="flex-1 min-w-0">
-              <Textarea
-                ref={textareaRef}
-                placeholder="Describe the task you want to add... (Type '/' for quick commands)"
-                onKeyDown={handleKeyDown}
-                onBlur={(e) => {
-                  // Only close if the new focus target is not the popover
-                  const relatedTarget = e.relatedTarget as HTMLElement;
-                  if (!relatedTarget || !relatedTarget.closest('[data-slot="popover-content"]')) {
-                    // Delay hiding commands to allow clicking on them
-                    setTimeout(() => {
-                      // Double check that we're still blurred and not focused on popover
-                      if (document.activeElement !== textareaRef.current && 
-                          !document.activeElement?.closest('[data-slot="popover-content"]')) {
-                        setShowCommands(false);
-                      }
-                    }, 200);
-                  }
-                }}
-                onFocus={() => {
-                  if (text === '/' || text.startsWith('/')) {
-                    setShowCommands(true);
-                  }
-                }}
-                value={text}
-                onChange={(e) => setText(e.currentTarget.value)}
-                className="min-h-[52px] max-h-[200px] resize-none border-0 bg-transparent focus-visible:ring-0 focus-visible:outline-none text-base py-3 pr-12 shadow-none"
-                disabled={isLoading}
-              />
-            </PopoverAnchor>
-            <Button
-              type="submit"
-              disabled={isDisabled}
-              size="icon"
-              className="absolute right-3 bottom-3 h-8 w-8 rounded-lg shrink-0 z-10"
-            >
-              {isLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Anchor className="h-4 w-4" />
-              )}
-              <span className="sr-only">Send</span>
-            </Button>
-          </div>
-        </form>
-        <PopoverContent 
-          className="w-[400px] p-0" 
-          align="start"
-          side="top"
-          sideOffset={8}
-          onInteractOutside={(e) => {
-            // Prevent closing when clicking on the popover itself
-            const target = e.target as HTMLElement;
-            if (target.closest('[data-slot="popover-content"]')) {
-              e.preventDefault();
-            }
-          }}
-        >
-          <Command>
-            <div className="text-xs font-semibold text-muted-foreground mb-2 px-2 pt-2">
-              Quick Commands
-            </div>
-            <CommandList>
-              <CommandGroup>
-                {QUICK_COMMANDS.map((cmd) => (
-                  <CommandItem
-                    key={cmd.command}
-                    onSelect={() => handleCommandClick(cmd.command)}
-                  >
-                    <div>
-                      <span className="font-mono text-primary">{cmd.command}</span>
-                      <span className="text-muted-foreground ml-2">{cmd.description}</span>
-                    </div>
-                  </CommandItem>
-                ))}
-                <CommandItem
-                  onSelect={() => handleCommandClick('/help')}
-                >
-                  <div>
-                    <span className="font-mono text-primary">/help</span>
-                    <span className="text-muted-foreground ml-2">Show all commands</span>
-                  </div>
-                </CommandItem>
-              </CommandGroup>
-              <CommandEmpty>
-                No commands found.
-              </CommandEmpty>
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
-    </div>
-  );
-}

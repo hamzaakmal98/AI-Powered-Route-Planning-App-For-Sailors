@@ -38,13 +38,11 @@ import {
   Check,
   X,
 } from "lucide-react";
-import { TaskChat } from "@/components/task-chat";
 
 export default function DashboardPage() {
   const router = useRouter();
   const [isChecking, setIsChecking] = useState(true);
   const [isLoadingTasks, setIsLoadingTasks] = useState(true);
-  const [showTaskChat, setShowTaskChat] = useState(false);
   const [editingDomain, setEditingDomain] = useState<string | null>(null);
   const [editingProgress, setEditingProgress] = useState<number>(0);
   const [savingDomain, setSavingDomain] = useState<string | null>(null);
@@ -326,7 +324,7 @@ export default function DashboardPage() {
                 Your preparation tasks, organized by priority
               </p>
             </div>
-            <Button onClick={() => setShowTaskChat(true)}>
+            <Button onClick={() => router.push("/dashboard/generate-task")}>
               <MessageSquare className="mr-2 h-4 w-4" />
               Generate Task
             </Button>
@@ -427,12 +425,6 @@ export default function DashboardPage() {
           )}
         </section>
 
-        {showTaskChat && (
-          <TaskChat
-            onClose={() => setShowTaskChat(false)}
-            onTaskAdded={handleTaskAdded}
-          />
-        )}
 
         {/* Domain Progress */}
         <section className="mt-8">

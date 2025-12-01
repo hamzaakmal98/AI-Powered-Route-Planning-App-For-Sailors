@@ -1,5 +1,6 @@
 "use client";
 
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -1113,6 +1114,7 @@ export const PromptInputSpeechButton = ({
   ...props
 }: PromptInputSpeechButtonProps) => {
   const [isListening, setIsListening] = useState(false);
+  const [interimTranscript, setInterimTranscript] = useState("");
   const [recognition, setRecognition] = useState<SpeechRecognition | null>(
     null
   );
@@ -1137,17 +1139,24 @@ export const PromptInputSpeechButton = ({
 
       speechRecognition.onend = () => {
         setIsListening(false);
+        setInterimTranscript("");
       };
 
       speechRecognition.onresult = (event) => {
         let finalTranscript = "";
+        let interimText = "";
 
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const result = event.results[i];
           if (result.isFinal) {
             finalTranscript += result[0]?.transcript ?? "";
+          } else {
+            interimText += result[0]?.transcript ?? "";
           }
         }
+
+        // Update interim transcript for visual feedback
+        setInterimTranscript(interimText);
 
         if (finalTranscript && textareaRef?.current) {
           const textarea = textareaRef.current;
@@ -1158,15 +1167,44 @@ export const PromptInputSpeechButton = ({
           textarea.value = newValue;
           textarea.dispatchEvent(new Event("input", { bubbles: true }));
           onTranscriptionChange?.(newValue);
+          setInterimTranscript(""); // Clear interim after final
         }
       };
 
       speechRecognition.onerror = (event) => {
         console.error("Speech recognition error:", event.error);
         setIsListening(false);
+        
+        // Show toast notification for errors
+        let errorMessage = "Speech recognition failed";
+        
+        switch (event.error) {
+          case "no-speech":
+            errorMessage = "No speech detected. Please try again.";
+            break;
+          case "audio-capture":
+            errorMessage = "Microphone not accessible. Please check your permissions.";
+            break;
+          case "not-allowed":
+            errorMessage = "Microphone permission denied. Please enable it in your browser settings.";
+            break;
+          case "network":
+            errorMessage = "Network error. Please check your connection.";
+            break;
+          case "aborted":
+            errorMessage = "Speech recognition was aborted.";
+            break;
+          default:
+            errorMessage = `Speech recognition error: ${event.error}`;
+        }
+        
+        toast.error(errorMessage, {
+          duration: 4000,
+        });
       };
 
       recognitionRef.current = speechRecognition;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setRecognition(speechRecognition);
     }
 
@@ -1190,18 +1228,88 @@ export const PromptInputSpeechButton = ({
   }, [recognition, isListening]);
 
   return (
-    <PromptInputButton
-      className={cn(
-        "relative transition-all duration-200",
-        isListening && "animate-pulse bg-accent text-accent-foreground",
-        className
+    <div className="relative">
+      <PromptInputButton
+        className={cn(
+          "relative transition-all duration-200",
+          isListening && "bg-primary text-primary-foreground shadow-lg shadow-primary/50",
+          className
+        )}
+        disabled={!recognition}
+        onClick={toggleListening}
+        {...props}
+      >
+        {isListening ? (
+          <div className="relative flex items-center justify-center">
+            {/* Animated waveform bars */}
+            <div className="flex items-end gap-0.5 h-4">
+              <div
+                className="w-0.5 bg-current rounded-full"
+                style={{
+                  height: "8px",
+                  animation: "waveform 1s ease-in-out infinite",
+                  animationDelay: "0s",
+                }}
+              />
+              <div
+                className="w-0.5 bg-current rounded-full"
+                style={{
+                  height: "12px",
+                  animation: "waveform 1s ease-in-out infinite",
+                  animationDelay: "0.15s",
+                }}
+              />
+              <div
+                className="w-0.5 bg-current rounded-full"
+                style={{
+                  height: "10px",
+                  animation: "waveform 1s ease-in-out infinite",
+                  animationDelay: "0.3s",
+                }}
+              />
+              <div
+                className="w-0.5 bg-current rounded-full"
+                style={{
+                  height: "8px",
+                  animation: "waveform 1s ease-in-out infinite",
+                  animationDelay: "0.45s",
+                }}
+              />
+              <div
+                className="w-0.5 bg-current rounded-full"
+                style={{
+                  height: "11px",
+                  animation: "waveform 1s ease-in-out infinite",
+                  animationDelay: "0.6s",
+                }}
+              />
+            </div>
+            {/* Pulsing ring indicator */}
+            <div
+              className={cn(
+                "absolute inset-0 rounded-full border-2 border-current opacity-75",
+                isListening && "animate-ping"
+              )}
+            />
+          </div>
+        ) : (
+          <MicIcon className="size-4" />
+        )}
+      </PromptInputButton>
+      {/* Show interim transcription above the input */}
+      {isListening && interimTranscript && (
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 bg-muted/95 backdrop-blur-sm rounded-lg border border-border shadow-lg text-xs text-foreground whitespace-nowrap z-50 animate-in fade-in slide-in-from-bottom-2">
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-0.5">
+              <div className="w-1 h-1 bg-primary rounded-full animate-pulse" />
+              <div className="w-1 h-1 bg-primary rounded-full animate-pulse" style={{ animationDelay: "0.2s" }} />
+              <div className="w-1 h-1 bg-primary rounded-full animate-pulse" style={{ animationDelay: "0.4s" }} />
+            </div>
+            <span className="italic">{interimTranscript}</span>
+          </div>
+        </div>
       )}
-      disabled={!recognition}
-      onClick={toggleListening}
-      {...props}
-    >
-      <MicIcon className="size-4" />
-    </PromptInputButton>
+    </div>
   );
 };
 
