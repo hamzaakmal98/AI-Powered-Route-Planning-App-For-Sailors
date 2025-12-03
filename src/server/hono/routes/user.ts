@@ -53,9 +53,7 @@ Return a JSON object with progress estimates (0-100) for each of these domains: 
 
   try {
     const result = await generateText({
-      model: process.env.NODE_ENV === 'production'
-        ? openai('gpt-3.5-turbo')
-        : ollama('qwen3:8b'),
+      model: process.env.NODE_ENV === 'production' ? openai('gpt-4o-mini') : /*ollama(process.env.OLLAMA_MODEL!)*/ openai("gpt-4o-mini"),
       system: systemPrompt,
       prompt: userPrompt,
       temperature: 0.7,

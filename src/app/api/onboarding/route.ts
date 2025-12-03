@@ -36,7 +36,7 @@ export async function POST(req: Request) {
     const modelMessages = convertToModelMessages(messages);
 
     const result = streamText({
-      model: process.env.NODE_ENV == "production" ? openai("gpt-3.5-turbo") : ollama('qwen3:8b'),
+      model: process.env.NODE_ENV == "production" ? openai("gpt-4o-mini") : /*ollama(process.env.OLLAMA_MODEL!)*/ openai("gpt-4o-mini"),
       system: systemPrompt,
       messages: modelMessages,
       temperature: 0.6,

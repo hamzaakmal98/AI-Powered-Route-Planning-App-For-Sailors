@@ -108,6 +108,17 @@ CREATE TABLE "passage_planning_tasks" (
     "estimatedTime" TEXT,
     "status" "task_status" NOT NULL DEFAULT 'ready',
     "progress" INTEGER NOT NULL DEFAULT 0,
+    "routeName" TEXT,
+    "departurePort" TEXT,
+    "departureLat" DOUBLE PRECISION,
+    "departureLng" DOUBLE PRECISION,
+    "destinationPort" TEXT,
+    "destinationLat" DOUBLE PRECISION,
+    "destinationLng" DOUBLE PRECISION,
+    "totalDistance" DOUBLE PRECISION,
+    "routeEstimatedTime" TEXT,
+    "routeStatus" TEXT NOT NULL DEFAULT 'planning',
+    "routeData" JSONB,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
     "started_at" TIMESTAMP(3),
@@ -125,6 +136,23 @@ CREATE TABLE "domain_progress" (
     "updated_at" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "domain_progress_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "waypoints" (
+    "id" TEXT NOT NULL,
+    "passagePlanningTaskId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "latitude" DOUBLE PRECISION NOT NULL,
+    "longitude" DOUBLE PRECISION NOT NULL,
+    "sequence" INTEGER NOT NULL,
+    "course" DOUBLE PRECISION,
+    "distance" DOUBLE PRECISION,
+    "notes" TEXT,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "waypoints_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateIndex
@@ -164,10 +192,19 @@ CREATE INDEX "passage_planning_tasks_userId_priority_idx" ON "passage_planning_t
 CREATE INDEX "passage_planning_tasks_userId_status_idx" ON "passage_planning_tasks"("userId", "status");
 
 -- CreateIndex
+CREATE INDEX "passage_planning_tasks_userId_routeStatus_idx" ON "passage_planning_tasks"("userId", "routeStatus");
+
+-- CreateIndex
 CREATE INDEX "domain_progress_userId_idx" ON "domain_progress"("userId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "domain_progress_userId_name_key" ON "domain_progress"("userId", "name");
+
+-- CreateIndex
+CREATE INDEX "waypoints_passagePlanningTaskId_idx" ON "waypoints"("passagePlanningTaskId");
+
+-- CreateIndex
+CREATE INDEX "waypoints_passagePlanningTaskId_sequence_idx" ON "waypoints"("passagePlanningTaskId", "sequence");
 
 -- AddForeignKey
 ALTER TABLE "accounts" ADD CONSTRAINT "accounts_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -189,3 +226,6 @@ ALTER TABLE "passage_planning_tasks" ADD CONSTRAINT "passage_planning_tasks_user
 
 -- AddForeignKey
 ALTER TABLE "domain_progress" ADD CONSTRAINT "domain_progress_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "waypoints" ADD CONSTRAINT "waypoints_passagePlanningTaskId_fkey" FOREIGN KEY ("passagePlanningTaskId") REFERENCES "passage_planning_tasks"("id") ON DELETE CASCADE ON UPDATE CASCADE;

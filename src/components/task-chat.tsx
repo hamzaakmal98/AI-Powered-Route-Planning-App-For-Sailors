@@ -2,16 +2,35 @@
 
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, memo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Anchor, X, CopyIcon, RefreshCcwIcon, ArrowDown, Loader2, ArrowRight, ExternalLink, AlertCircle } from 'lucide-react';
+import { Anchor, X, CopyIcon, RefreshCcwIcon, ArrowDown, Loader2, ArrowRight, ExternalLink, AlertCircle, SquareIcon, Brain } from 'lucide-react';
 import Link from 'next/link';
 import { Streamdown } from 'streamdown';
 import { StickToBottom, useStickToBottomContext } from 'use-stick-to-bottom';
 import { DomainSelector, TaskDomain } from '@/components/task-chat/domain-selector';
+import { LocationSelector, Location } from '@/components/task-chat/location-selector';
+import dynamic from 'next/dynamic';
 import { cn } from '@/lib/utils';
+import { honoClient } from '@/lib/hono-client';
+import { toast } from 'sonner';
+
+// Dynamically import MarineMap to avoid SSR issues with Leaflet
+const MarineMap = dynamic(() => import('@/components/task-chat/marine-map').then(mod => ({ default: mod.MarineMap })), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full rounded-lg border border-border overflow-hidden" style={{ height: '500px' }}>
+      <div className="flex items-center justify-center h-full bg-muted/50">
+        <div className="text-muted-foreground">Loading map...</div>
+      </div>
+    </div>
+  ),
+});
+
+// Import MapLocation type separately (types don't cause SSR issues)
+import type { MapLocation } from '@/components/task-chat/marine-map';
 import {
   PromptInput,
   PromptInputBody,
@@ -41,13 +60,27 @@ interface TaskChatProps {
 export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatProps) {
   const [showDomainSelector, setShowDomainSelector] = useState(false);
   const [selectedDomain, setSelectedDomain] = useState<TaskDomain | null>(null);
+  const [showLocationSelector, setShowLocationSelector] = useState(false);
+  const [locationSelectorType, setLocationSelectorType] = useState<'departure' | 'destination' | null>(null);
+  const [showConfirmationSelector, setShowConfirmationSelector] = useState(false);
+  const [confirmationMessage, setConfirmationMessage] = useState<string>('');
+  const [confirmationOptions, setConfirmationOptions] = useState<string[]>([]);
+  const [showRoute, setShowRoute] = useState(false);
+  const [routeData, setRouteData] = useState<{ route: MapLocation[]; departure?: MapLocation; destination?: MapLocation; routeId?: string } | null>(null);
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
+  const [isSubmittingDomain, setIsSubmittingDomain] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const { messages, sendMessage, status, error, regenerate } = useChat({
+  const stopRef = useRef<(() => void) | null>(null);
+  const { messages, sendMessage, status, error, regenerate, stop } = useChat({
     transport: new DefaultChatTransport({
       api: '/api/tasks',
     }),
   });
+  
+  // Store stop function in ref to ensure we always have the latest version
+  useEffect(() => {
+    stopRef.current = stop || null;
+  }, [stop]);
 
   // Parse messages for task additions from tool calls
   useEffect(() => {
@@ -101,7 +134,7 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
   // Track if domain has been selected
   const [domainSelected, setDomainSelected] = useState(false);
 
-  // Parse messages for domain selection JSON
+  // Parse messages for domain selection JSON and location selector JSON
   useEffect(() => {
     if (messages.length === 0) return;
 
@@ -117,7 +150,6 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
     if (hasSelectedDomain || selectedDomain) {
       setShowDomainSelector(false);
       setDomainSelected(true);
-      return;
     }
 
     // Only show domain selector if no domain has been selected yet
@@ -126,15 +158,97 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
       const textParts = lastMessage.parts?.filter((part: any) => part.type === 'text') || [];
       const messageText = textParts.map((part: any) => part.text).join('');
 
-      // Look for JSON at the end of the message
-      const jsonMatch = messageText.match(/\{[\s\S]*"action"[\s\S]*"showDomainSelector"[\s\S]*\}/);
-      if (jsonMatch) {
+      // Look for location selector JSON
+      const locationJsonMatch = messageText.match(/\{[\s\S]*"action"[\s\S]*"showLocationSelector"[\s\S]*\}/);
+      if (locationJsonMatch) {
         try {
-          const jsonData = JSON.parse(jsonMatch[0]);
+          const jsonData = JSON.parse(locationJsonMatch[0]);
+          if (jsonData.action === 'showLocationSelector' && jsonData.type) {
+            setShowLocationSelector(true);
+            setLocationSelectorType(jsonData.type);
+            setIsWaitingForResponse(false);
+            return;
+          }
+        } catch (e) {
+          // Ignore parse errors
+        }
+      }
+
+      // Look for domain selector JSON
+      const domainJsonMatch = messageText.match(/\{[\s\S]*"action"[\s\S]*"showDomainSelector"[\s\S]*\}/);
+      if (domainJsonMatch) {
+        try {
+          const jsonData = JSON.parse(domainJsonMatch[0]);
           if (jsonData.action === 'showDomainSelector') {
             setShowDomainSelector(true);
             setDomainSelected(false);
             setIsWaitingForResponse(false); // Stop loading when domain selector appears
+            setIsSubmittingDomain(false); // Reset submitting state when selector appears
+            return;
+          }
+        } catch (e) {
+          // Ignore parse errors
+        }
+      }
+
+      // Look for confirmation selector JSON
+      const confirmationJsonMatch = messageText.match(/\{[\s\S]*"action"[\s\S]*"showConfirmationSelector"[\s\S]*\}/);
+      if (confirmationJsonMatch) {
+        try {
+          const jsonData = JSON.parse(confirmationJsonMatch[0]);
+          if (jsonData.action === 'showConfirmationSelector' && jsonData.options && Array.isArray(jsonData.options)) {
+            setShowConfirmationSelector(true);
+            setConfirmationMessage(jsonData.message || 'Please confirm:');
+            setConfirmationOptions(jsonData.options);
+            setIsWaitingForResponse(false);
+            return;
+          }
+        } catch (e) {
+          // Ignore parse errors
+        }
+      }
+
+      // Look for route display JSON
+      const routeJsonMatch = messageText.match(/\{[\s\S]*"action"[\s\S]*"showRoute"[\s\S]*\}/);
+      if (routeJsonMatch) {
+        try {
+          const jsonData = JSON.parse(routeJsonMatch[0]);
+          if (jsonData.action === 'showRoute' && jsonData.route && Array.isArray(jsonData.route)) {
+            // Validate that waypoints have IDs (except for departure and destination which might not have IDs yet)
+            const waypointsWithoutIds = jsonData.route.filter((point: any, index: number) => {
+              // Skip first (departure) and last (destination) as they might not have IDs yet
+              if (index === 0 || index === jsonData.route.length - 1) return false;
+              return !point.id;
+            });
+
+            if (waypointsWithoutIds.length > 0) {
+              toast.error(`Warning: ${waypointsWithoutIds.length} waypoint(s) are missing IDs and cannot be edited. Please regenerate the route.`);
+            }
+
+            setShowRoute(true);
+            setRouteData({
+              route: jsonData.route.map((point: any) => ({
+                id: point.id,
+                name: point.name || '',
+                lat: typeof point.lat === 'number' ? point.lat : parseFloat(point.lat),
+                lng: typeof point.lng === 'number' ? point.lng : parseFloat(point.lng),
+                country: point.country,
+              })),
+              routeId: jsonData.routeId,
+              departure: jsonData.departure ? {
+                name: jsonData.departure.name || '',
+                lat: typeof jsonData.departure.lat === 'number' ? jsonData.departure.lat : parseFloat(jsonData.departure.lat),
+                lng: typeof jsonData.departure.lng === 'number' ? jsonData.departure.lng : parseFloat(jsonData.departure.lng),
+                country: jsonData.departure.country,
+              } : undefined,
+              destination: jsonData.destination ? {
+                name: jsonData.destination.name || '',
+                lat: typeof jsonData.destination.lat === 'number' ? jsonData.destination.lat : parseFloat(jsonData.destination.lat),
+                lng: typeof jsonData.destination.lng === 'number' ? jsonData.destination.lng : parseFloat(jsonData.destination.lng),
+                country: jsonData.destination.country,
+              } : undefined,
+            });
+            setIsWaitingForResponse(false);
             return;
           }
         } catch (e) {
@@ -145,11 +259,23 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
       // If we got any assistant response, stop the loading
       if (lastMessage && lastMessage.role === 'assistant') {
         setIsWaitingForResponse(false);
+        // Reset domain submission state when we get a new assistant response
+        // (this means the domain selection was processed)
+        if (isSubmittingDomain) {
+          setIsSubmittingDomain(false);
+        }
+      }
+
+      // If there's an error, stop waiting
+      if (error) {
+        setIsWaitingForResponse(false);
+        setIsSubmittingDomain(false);
       }
     }
-  }, [messages, selectedDomain]);
+  }, [messages, selectedDomain, error]);
 
   const handleDomainSelect = (domain: TaskDomain) => {
+    setIsSubmittingDomain(true);
     setSelectedDomain(domain);
     setShowDomainSelector(false);
     setDomainSelected(true);
@@ -157,6 +283,26 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
     sendMessage({
       text: `I've selected the ${domain} domain.`
     });
+  };
+
+  const handleLocationSelect = (location: Location) => {
+    setShowLocationSelector(false);
+    const locationType = locationSelectorType || 'departure';
+    // Send message to AI with selected location including coordinates
+    sendMessage({
+      text: `I've selected ${location.name} (${location.lat}, ${location.lng}) as ${locationType}.`
+    });
+    setLocationSelectorType(null);
+  };
+
+  const handleConfirmationSelect = (option: string) => {
+    setShowConfirmationSelector(false);
+    // Send the selected option as the user's response
+    sendMessage({
+      text: option
+    });
+    setConfirmationMessage('');
+    setConfirmationOptions([]);
   };
 
   const handleSubmit = (message: PromptInputMessage) => {
@@ -171,25 +317,89 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
     sendMessage({ text: message.text?.trim() || '', files: message.files });
   };
 
+  // Component to render reasoning parts - only show while streaming
+  // Memoized to prevent unnecessary re-renders that cause flashing
+  const ReasoningPart = memo(({ part, index }: { part: any; index: number }) => {
+    const isStreaming = part.state === 'streaming';
+    
+    // Only render if streaming, hide when done
+    if (!isStreaming) {
+      return null;
+    }
+
+    return (
+      <div className="rounded-lg border border-primary/20 bg-primary/5 overflow-hidden">
+        <div className="w-full flex items-center justify-between px-3 py-2.5">
+          <div className="flex items-center gap-2.5">
+            <div className="relative flex-shrink-0">
+              <Brain className="h-4 w-4 text-primary" />
+            </div>
+            <span className="text-xs font-semibold text-primary">
+              First Mate is thinking...
+            </span>
+            <Loader2 className="h-3 w-3 text-primary animate-spin flex-shrink-0" />
+          </div>
+        </div>
+        <div className="px-3 pb-3 pt-2 border-t border-primary/10">
+          <div className="text-xs text-muted-foreground font-mono whitespace-pre-wrap break-words leading-relaxed">
+            {part.text}
+            <span className="inline-block w-2 h-3 bg-primary/40 animate-pulse ml-1.5" />
+          </div>
+        </div>
+      </div>
+    );
+  }, (prevProps, nextProps) => {
+    // Only re-render if the text content or streaming state changes
+    return prevProps.part.text === nextProps.part.text && 
+           prevProps.part.state === nextProps.part.state;
+  });
+
   const renderMessage = (message: any, index: number) => {
     if (message.role === 'assistant') {
       const textParts = message.parts?.filter((part: any) => part.type === 'text') || [];
+      // Only show reasoning parts that are currently streaming
+      const reasoningParts = message.parts?.filter((part: any) => part.type === 'reasoning' && part.state === 'streaming') || [];
       let messageText = textParts.map((part: any) => part.text).join('');
 
       // Remove JSON metadata from displayed message (keep it for parsing but don't show it)
       messageText = messageText.replace(/\{[\s\S]*"action"[\s\S]*"showDomainSelector"[\s\S]*\}/g, '').trim();
+      messageText = messageText.replace(/\{[\s\S]*"action"[\s\S]*"showLocationSelector"[\s\S]*\}/g, '').trim();
+      messageText = messageText.replace(/\{[\s\S]*"action"[\s\S]*"showConfirmationSelector"[\s\S]*\}/g, '').trim();
+      messageText = messageText.replace(/\{[\s\S]*"action"[\s\S]*"showRoute"[\s\S]*\}/g, '').trim();
 
+      // Create a unique key combining message ID and index to avoid duplicate keys
+      const uniqueKey = message.id ? `assistant-${message.id}-${index}` : `assistant-${index}`;
+      
       return (
-        <div key={message.id || index} className={cn("group flex items-start gap-4 w-full py-4 hover:bg-muted/20 transition-colors", fullPage ? "px-0" : "px-6")}>
+        <div key={uniqueKey} className={cn("group flex items-start gap-4 w-full py-4 hover:bg-muted/20 transition-colors", fullPage ? "px-0" : "px-6")}>
           <Avatar className="size-8 shrink-0 mt-0.5 ring-2 ring-primary/10">
             <AvatarFallback className="bg-gradient-to-br from-primary to-primary/80 text-primary-foreground border-2 border-primary/20 shadow-sm">
               <Anchor className="size-4" />
             </AvatarFallback>
           </Avatar>
           <div className="flex-1 min-w-0 space-y-2">
-            <div className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 text-foreground">
-              <Streamdown>{messageText}</Streamdown>
-            </div>
+            {/* Render reasoning parts first (only if streaming) */}
+            {reasoningParts.length > 0 && (
+              <div className="space-y-2">
+                {reasoningParts.map((part: any, idx: number) => (
+                  <ReasoningPart key={`reasoning-${uniqueKey}-${idx}`} part={part} index={idx} />
+                ))}
+              </div>
+            )}
+            {/* Render text content - always show message container, even if text is empty while streaming */}
+            {(messageText || (index === messages.length - 1 && (status === 'streaming' || status === 'submitted'))) && (
+              <div className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 text-foreground">
+                {messageText ? (
+                  <Streamdown>{messageText}</Streamdown>
+                ) : index === messages.length - 1 && status === 'streaming' ? (
+                  // Show placeholder while waiting for text after reasoning completes
+                  <div className="text-muted-foreground italic flex items-center gap-2">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    <span>First Mate is responding...</span>
+                  </div>
+                ) : null}
+              </div>
+            )}
             {index === messages.length - 1 && (
               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity pt-1">
                 <TooltipProvider>
@@ -237,8 +447,11 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
     const textParts = message.parts?.filter((part: any) => part.type === 'text') || [];
     const messageText = textParts.map((part: any) => part.text).join('');
 
+    // Create a unique key combining message ID and index to avoid duplicate keys
+    const uniqueKey = message.id ? `user-${message.id}-${index}` : `user-${index}`;
+
     return (
-      <div key={message.id || index} className={cn("flex items-start gap-4 w-full py-4 hover:bg-muted/20 transition-colors", fullPage ? "px-0" : "px-6")}>
+      <div key={uniqueKey} className={cn("flex items-start gap-4 w-full py-4 hover:bg-muted/20 transition-colors", fullPage ? "px-0" : "px-6")}>
         <div className="flex-1 min-w-0 ml-auto max-w-[85%]">
           <div className="rounded-xl bg-primary text-primary-foreground px-4 py-3 text-sm shadow-sm border border-primary/20">
             {messageText}
@@ -328,7 +541,7 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
         >
           <StickToBottom.Content className={fullPage ? "flex flex-col items-center w-full" : "flex flex-col"}>
             <div className={fullPage ? "w-full max-w-3xl flex flex-col" : "w-full flex flex-col"}>
-            {!domainSelected && !showDomainSelector && (
+            {!domainSelected && !showDomainSelector && messages.length === 0 && (
               <div className={cn("flex-1 flex items-center justify-center py-12", fullPage ? "px-0 w-full" : "px-6")}>
                 {isWaitingForResponse && messages.filter((m: any) => m.role === 'assistant').length === 0 ? (
                   // Loading indicator
@@ -375,24 +588,18 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
                     <div className="pt-4">
                       <Button
                         onClick={() => {
-                          setIsWaitingForResponse(true);
+                          // Show domain selector immediately for better UX
+                          setShowDomainSelector(true);
+                          setDomainSelected(false);
+                          setIsWaitingForResponse(false);
+                          // Also send message to agent to start conversation
                           sendMessage({ text: 'Hi, I want to create a task.' });
                         }}
                         size="lg"
-                        disabled={isWaitingForResponse}
                         className="w-full sm:w-auto px-8 h-12 text-base font-semibold shadow-lg hover:shadow-xl transition-all duration-200 bg-gradient-to-r from-primary to-primary/90 hover:from-primary/90 hover:to-primary/80"
                       >
-                        {isWaitingForResponse ? (
-                          <>
-                            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                            Generating...
-                          </>
-                        ) : (
-                          <>
-                            Start Creating Task
-                            <ArrowRight className="ml-2 h-5 w-5" />
-                          </>
-                        )}
+                        Start Creating Task
+                        <ArrowRight className="ml-2 h-5 w-5" />
                       </Button>
                     </div>
                   </div>
@@ -401,21 +608,36 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
             )}
 
             {/* Only show messages after domain is selected */}
-            {domainSelected && messages.map((message, index) => {
-              // Filter out messages before domain selection
-              const messageTextParts = message.parts?.filter((part: any) => part.type === 'text') || [];
-              const messageText = messageTextParts.map((part: any) => part.text).join('');
+            {domainSelected && (() => {
+              // Deduplicate messages by ID to avoid duplicate key errors
+              const seenIds = new Set<string>();
+              const uniqueMessages = messages.filter((message: any) => {
+                if (!message.id) return true; // Keep messages without IDs
+                if (seenIds.has(message.id)) {
+                  return false; // Skip duplicate
+                }
+                seenIds.add(message.id);
+                return true;
+              });
 
-              // Skip messages that are part of domain selection flow
-              if (message.role === 'user' && messageText.includes("I want to create a task") && !messageText.includes("I've selected the")) {
-                return null;
-              }
-              if (message.role === 'assistant' && messageText.includes("showDomainSelector")) {
-                return null;
-              }
+              return uniqueMessages.map((message, index) => {
+                // Filter out messages before domain selection
+                const messageTextParts = message.parts?.filter((part: any) => part.type === 'text') || [];
+                const messageText = messageTextParts.map((part: any) => part.text).join('');
 
-              return renderMessage(message, index);
-            })}
+                // Skip messages that are part of domain selection flow
+                if (message.role === 'user' && messageText.includes("I want to create a task") && !messageText.includes("I've selected the")) {
+                  return null;
+                }
+                // Only hide domain selector messages, but show location selector messages (they contain useful text)
+                if (message.role === 'assistant' && messageText.includes("showDomainSelector") && !messageText.trim().replace(/\{[\s\S]*"action"[\s\S]*"showDomainSelector"[\s\S]*\}/g, '').trim()) {
+                  return null;
+                }
+
+                const rendered = renderMessage(message, index);
+                return rendered;
+              }).filter(Boolean);
+            })()}
 
             {showDomainSelector && (
               <div className={cn("flex items-start gap-4 w-full py-6", fullPage ? "px-0" : "px-6")}>
@@ -427,7 +649,225 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
                 <div className="flex-1 min-w-0">
                   <DomainSelector
                     onSelect={handleDomainSelect}
+                    isSubmitting={isSubmittingDomain}
+                  />
+                </div>
+              </div>
+            )}
+
+            {showLocationSelector && locationSelectorType && (
+              <div className={cn("flex items-start gap-4 w-full py-6", fullPage ? "px-0" : "px-6")}>
+                <Avatar className="size-8 shrink-0 mt-0.5 ring-2 ring-primary/10">
+                  <AvatarFallback className="bg-gradient-to-br from-primary to-primary/80 text-primary-foreground border-2 border-primary/20 shadow-sm">
+                    <Anchor className="size-4" />
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1 min-w-0">
+                  <LocationSelector
+                    type={locationSelectorType}
+                    onSelect={handleLocationSelect}
                     isSubmitting={status === 'submitted' || status === 'streaming'}
+                  />
+                </div>
+              </div>
+            )}
+
+            {showConfirmationSelector && confirmationOptions.length > 0 && (
+              <div className={cn("flex items-start gap-4 w-full py-6", fullPage ? "px-0" : "px-6")}>
+                <Avatar className="size-8 shrink-0 mt-0.5 ring-2 ring-primary/10">
+                  <AvatarFallback className="bg-gradient-to-br from-primary to-primary/80 text-primary-foreground border-2 border-primary/20 shadow-sm">
+                    <Anchor className="size-4" />
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1 min-w-0">
+                  <div className="bg-muted/50 rounded-lg border border-border/50 p-4 space-y-3">
+                    {confirmationMessage && (
+                      <p className="text-sm font-medium text-foreground">{confirmationMessage}</p>
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                      {confirmationOptions.map((option, index) => (
+                        <Button
+                          key={index}
+                          variant={option.toLowerCase().includes('yes') || option.toLowerCase() === 'yes' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => handleConfirmationSelect(option)}
+                          disabled={status === 'submitted' || status === 'streaming'}
+                          className="min-w-[120px]"
+                        >
+                          {option}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {showRoute && routeData && (
+              <div className={cn("flex items-start gap-4 w-full py-6", fullPage ? "px-0" : "px-6")}>
+                <Avatar className="size-8 shrink-0 mt-0.5 ring-2 ring-primary/10">
+                  <AvatarFallback className="bg-gradient-to-br from-primary to-primary/80 text-primary-foreground border-2 border-primary/20 shadow-sm">
+                    <Anchor className="size-4" />
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1 min-w-0">
+                  <MarineMap
+                    route={routeData.route}
+                    departure={routeData.departure || routeData.route[0]}
+                    destination={routeData.destination || routeData.route[routeData.route.length - 1]}
+                    waypoints={routeData.route.length > 2 
+                      ? routeData.route.slice(1, -1) 
+                      : []}
+                    mode="route"
+                    editable={true}
+                    height="500px"
+                    onWaypointUpdate={async (index, waypoint) => {
+                      // Update waypoint in route (index + 1 because first is departure)
+                      if (routeData && routeData.route.length > index + 1) {
+                        const waypointToUpdate = routeData.route[index + 1];
+                        
+                        // Check if waypoint has an ID
+                        if (!waypointToUpdate.id) {
+                          toast.error('Cannot update waypoint: Missing waypoint ID. Please regenerate the route.');
+                          return;
+                        }
+                        
+                        // If waypoint has an ID, update it in the database
+                        if (waypointToUpdate.id) {
+                          try {
+                            const response = await honoClient.api.waypoints.$put({
+                              json: {
+                                waypointId: waypointToUpdate.id,
+                                name: waypoint.name,
+                                latitude: waypoint.lat,
+                                longitude: waypoint.lng,
+                              },
+                            });
+                            
+                            if (!response.ok) {
+                              toast.error('Failed to update waypoint in database');
+                              return;
+                            }
+                            
+                            const result = await response.json();
+                            if (result.success && result.waypoint) {
+                              // Update local state with the updated waypoint
+                              const updatedRoute = [...routeData.route];
+                              updatedRoute[index + 1] = {
+                                ...waypoint,
+                                id: result.waypoint.id,
+                              };
+                              setRouteData({
+                                ...routeData,
+                                route: updatedRoute,
+                              });
+                              toast.success('Waypoint updated successfully');
+                            } else {
+                              toast.error('Failed to update waypoint');
+                            }
+                          } catch (error) {
+                            console.error('Error updating waypoint:', error);
+                            toast.error('Error updating waypoint. Please try again.');
+                            // Still update local state even if API call fails
+                            const updatedRoute = [...routeData.route];
+                            updatedRoute[index + 1] = waypoint;
+                            setRouteData({
+                              ...routeData,
+                              route: updatedRoute,
+                            });
+                          }
+                        } else {
+                          // No ID, just update local state
+                          const updatedRoute = [...routeData.route];
+                          updatedRoute[index + 1] = waypoint;
+                          setRouteData({
+                            ...routeData,
+                            route: updatedRoute,
+                          });
+                        }
+                      }
+                    }}
+                    onWaypointDelete={async (index) => {
+                      // Remove waypoint from route
+                      // The index is 0-based in the waypoints array (which excludes departure and destination)
+                      // So we need to add 1 to get the index in the full route array
+                      if (!routeData || !routeData.route || routeData.route.length <= index + 1) {
+                        toast.error('Cannot delete waypoint: Invalid route data');
+                        return;
+                      }
+
+                      const waypointToDelete = routeData.route[index + 1];
+                      
+                      // Check if waypoint has an ID
+                      if (!waypointToDelete?.id) {
+                        toast.error('Cannot delete waypoint: Missing waypoint ID. Please regenerate the route.');
+                        return;
+                      }
+                      
+                      // If waypoint has an ID, delete it from the database
+                      if (waypointToDelete?.id) {
+                        try {
+                          const response = await honoClient.api.waypoints.$delete({
+                            query: {
+                              waypointId: waypointToDelete.id,
+                            },
+                          });
+                          
+                          if (!response.ok) {
+                            const errorText = await response.text();
+                            console.error('Failed to delete waypoint:', response.status, errorText);
+                            toast.error('Failed to delete waypoint from database');
+                            return;
+                          }
+                          
+                          const result = await response.json();
+                          if (result.success) {
+                            // Remove from local state
+                            const updatedRoute = [...routeData.route];
+                            updatedRoute.splice(index + 1, 1);
+                            setRouteData({
+                              ...routeData,
+                              route: updatedRoute,
+                            });
+                            toast.success('Waypoint deleted successfully');
+                          } else {
+                            toast.error('Failed to delete waypoint');
+                          }
+                        } catch (error) {
+                          console.error('Error deleting waypoint:', error);
+                          toast.error('Error deleting waypoint. Please try again.');
+                          // Still update local state even if API call fails
+                          const updatedRoute = [...routeData.route];
+                          updatedRoute.splice(index + 1, 1);
+                          setRouteData({
+                            ...routeData,
+                            route: updatedRoute,
+                          });
+                        }
+                      } else {
+                        // No ID, just update local state
+                        const updatedRoute = [...routeData.route];
+                        updatedRoute.splice(index + 1, 1);
+                        setRouteData({
+                          ...routeData,
+                          route: updatedRoute,
+                        });
+                      }
+                    }}
+                    onWaypointAdd={async (waypoint) => {
+                      // Add waypoint before destination
+                      if (routeData && routeData.route.length > 0) {
+                        const updatedRoute = [...routeData.route];
+                        updatedRoute.splice(updatedRoute.length - 1, 0, waypoint);
+                        setRouteData({
+                          ...routeData,
+                          route: updatedRoute,
+                        });
+                        
+                        // Note: New waypoints added via map click will need to be saved via the agent
+                        // This is just for local display
+                      }
+                    }}
                   />
                 </div>
               </div>
@@ -447,7 +887,7 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
               </div>
             )}
 
-            {domainSelected && error && (
+            {(domainSelected || !domainSelected) && error && (
               <div className={cn("flex items-start gap-4 w-full py-4", fullPage ? "px-0" : "px-6")}>
                 <Avatar className="size-8 shrink-0 mt-0.5 ring-2 ring-destructive/10">
                   <AvatarFallback className="bg-destructive/10 text-destructive border-2 border-destructive/20">
@@ -456,6 +896,7 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
                 </Avatar>
                 <div className="text-sm text-destructive bg-destructive/10 px-4 py-2 rounded-lg border border-destructive/20">
                   Something went wrong. Please try again.
+                  {error.message && <div className="mt-1 text-xs">{error.message}</div>}
                 </div>
               </div>
             )}
@@ -464,8 +905,8 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
           <ScrollToBottomButton />
         </StickToBottom>
 
-        {/* Input - only show after domain is selected */}
-        {domainSelected && !showDomainSelector && (
+        {/* Input - only show after domain is selected, but allow input even when route is displayed */}
+        {domainSelected && !showDomainSelector && !showLocationSelector && !showConfirmationSelector && (
           <div className={cn(
             "fixed bottom-0 left-0 right-0 z-50",
             fullPage ? "" : "pointer-events-none"
@@ -492,11 +933,43 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
                           <PromptInputActionAddAttachments />
                         </PromptInputActionMenuContent>
                       </PromptInputActionMenu>
-                      <PromptInputSpeechButton
-                        textareaRef={textareaRef}
-                      />
-                    </PromptInputTools>
+                    <PromptInputSpeechButton
+                      textareaRef={textareaRef}
+                    />
+                  </PromptInputTools>
+                  {status === 'streaming' ? (
+                    <Button
+                      type="button"
+                      variant="default"
+                      size="icon-sm"
+                      onMouseDown={(e) => {
+                        // Use onMouseDown to catch the event before form handlers
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        // Use ref to ensure we have the latest stop function
+                        const stopFn = stopRef.current || stop;
+                        if (stopFn) {
+                          try {
+                            stopFn();
+                            console.log('Stop function called');
+                          } catch (err) {
+                            console.error('Error stopping generation:', err);
+                          }
+                        } else {
+                          console.warn('Stop function not available');
+                        }
+                      }}
+                      aria-label="Stop generation"
+                    >
+                      <SquareIcon className="size-4" />
+                    </Button>
+                  ) : (
                     <PromptInputSubmit status={status} />
+                  )}
                   </PromptInputFooter>
                 </PromptInput>
               </div>
