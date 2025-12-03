@@ -2,7 +2,7 @@
 
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
-import { useState, useEffect, useCallback, useRef, memo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, memo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -12,10 +12,13 @@ import { Streamdown } from 'streamdown';
 import { StickToBottom, useStickToBottomContext } from 'use-stick-to-bottom';
 import { DomainSelector, TaskDomain } from '@/components/task-chat/domain-selector';
 import { LocationSelector, Location } from '@/components/task-chat/location-selector';
+import { Checklist, ChecklistCategory } from '@/components/task-chat/checklist';
+import { DatePicker } from '@/components/ui/date-picker';
 import dynamic from 'next/dynamic';
 import { cn } from '@/lib/utils';
 import { honoClient } from '@/lib/hono-client';
 import { toast } from 'sonner';
+import { useRouter } from 'next/navigation';
 
 // Dynamically import MarineMap to avoid SSR issues with Leaflet
 const MarineMap = dynamic(() => import('@/components/task-chat/marine-map').then(mod => ({ default: mod.MarineMap })), {
@@ -67,6 +70,14 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
   const [confirmationOptions, setConfirmationOptions] = useState<string[]>([]);
   const [showRoute, setShowRoute] = useState(false);
   const [routeData, setRouteData] = useState<{ route: MapLocation[]; departure?: MapLocation; destination?: MapLocation; routeId?: string } | null>(null);
+  const [routeMessageId, setRouteMessageId] = useState<string | null>(null);
+  const [showChecklist, setShowChecklist] = useState(false);
+  const [checklistData, setChecklistData] = useState<{ taskId: string; checklist: ChecklistCategory[] } | null>(null);
+  const [checklistMessageId, setChecklistMessageId] = useState<string | null>(null);
+  const router = useRouter();
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [datePickerData, setDatePickerData] = useState<{ type: 'departure'; taskId: string } | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string>('');
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const [isSubmittingDomain, setIsSubmittingDomain] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -174,9 +185,9 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
         }
       }
 
-      // Look for domain selector JSON
+      // Look for domain selector JSON - but only if domain hasn't been selected yet
       const domainJsonMatch = messageText.match(/\{[\s\S]*"action"[\s\S]*"showDomainSelector"[\s\S]*\}/);
-      if (domainJsonMatch) {
+      if (domainJsonMatch && !hasSelectedDomain && !selectedDomain && !domainSelected) {
         try {
           const jsonData = JSON.parse(domainJsonMatch[0]);
           if (jsonData.action === 'showDomainSelector') {
@@ -226,6 +237,7 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
             }
 
             setShowRoute(true);
+            setRouteMessageId(lastMessage.id || null);
             setRouteData({
               route: jsonData.route.map((point: any) => ({
                 id: point.id,
@@ -248,6 +260,69 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
                 country: jsonData.destination.country,
               } : undefined,
             });
+            setIsWaitingForResponse(false);
+            return;
+          }
+        } catch (e) {
+          // Ignore parse errors
+        }
+      }
+
+      // Look for checklist display JSON
+      const checklistJsonMatch = messageText.match(/\{[\s\S]*"action"[\s\S]*"showChecklist"[\s\S]*\}/);
+      if (checklistJsonMatch) {
+        try {
+          const jsonData = JSON.parse(checklistJsonMatch[0]);
+          if (jsonData.action === 'showChecklist' && jsonData.taskId && jsonData.checklist && Array.isArray(jsonData.checklist)) {
+            setShowChecklist(true);
+            setChecklistMessageId(lastMessage.id || null);
+            setChecklistData({
+              taskId: jsonData.taskId,
+              checklist: jsonData.checklist.map((category: any) => ({
+                category: category.category,
+                items: category.items.map((item: any) => ({
+                  id: item.id,
+                  label: item.label,
+                  checked: item.checked ?? false,
+                  sequence: item.sequence,
+                })),
+              })),
+            });
+            setIsWaitingForResponse(false);
+            return;
+          }
+        } catch (e) {
+          // Ignore parse errors
+        }
+      }
+
+      // Look for date picker JSON
+      const datePickerJsonMatch = messageText.match(/\{[\s\S]*"action"[\s\S]*"showDatePicker"[\s\S]*\}/);
+      if (datePickerJsonMatch) {
+        try {
+          const jsonData = JSON.parse(datePickerJsonMatch[0]);
+          if (jsonData.action === 'showDatePicker' && jsonData.type && jsonData.taskId) {
+            setShowDatePicker(true);
+            setDatePickerData({
+              type: jsonData.type,
+              taskId: jsonData.taskId,
+            });
+            setIsWaitingForResponse(false);
+            return;
+          }
+        } catch (e) {
+          // Ignore parse errors
+        }
+      }
+
+      // Look for redirect JSON
+      const redirectJsonMatch = messageText.match(/\{[\s\S]*"action"[\s\S]*"redirect"[\s\S]*\}/);
+      if (redirectJsonMatch) {
+        try {
+          const jsonData = JSON.parse(redirectJsonMatch[0]);
+          if (jsonData.action === 'redirect' && jsonData.url) {
+            // Redirect to the specified URL
+            router.push(jsonData.url);
             setIsWaitingForResponse(false);
             return;
           }
@@ -366,6 +441,9 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
       messageText = messageText.replace(/\{[\s\S]*"action"[\s\S]*"showLocationSelector"[\s\S]*\}/g, '').trim();
       messageText = messageText.replace(/\{[\s\S]*"action"[\s\S]*"showConfirmationSelector"[\s\S]*\}/g, '').trim();
       messageText = messageText.replace(/\{[\s\S]*"action"[\s\S]*"showRoute"[\s\S]*\}/g, '').trim();
+      messageText = messageText.replace(/\{[\s\S]*"action"[\s\S]*"showChecklist"[\s\S]*\}/g, '').trim();
+      messageText = messageText.replace(/\{[\s\S]*"action"[\s\S]*"showDatePicker"[\s\S]*\}/g, '').trim();
+      messageText = messageText.replace(/\{[\s\S]*"action"[\s\S]*"redirect"[\s\S]*\}/g, '').trim();
 
       // Create a unique key combining message ID and index to avoid duplicate keys
       const uniqueKey = message.id ? `assistant-${message.id}-${index}` : `assistant-${index}`;
@@ -635,7 +713,209 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
                 }
 
                 const rendered = renderMessage(message, index);
-                return rendered;
+                
+                // If this message triggered the route display, render the route right after it
+                const shouldShowRoute = showRoute && routeData && routeMessageId === message.id;
+                // If this message triggered the checklist display, render the checklist right after it
+                const shouldShowChecklist = showChecklist && checklistData && checklistMessageId === message.id;
+                
+                return (
+                  <React.Fragment key={message.id || `message-${index}`}>
+                    {rendered}
+                    {shouldShowChecklist && (
+                      <div className={cn("flex items-start gap-4 w-full py-6", fullPage ? "px-0" : "px-6")}>
+                        <Avatar className="size-8 shrink-0 mt-0.5 ring-2 ring-primary/10">
+                          <AvatarFallback className="bg-gradient-to-br from-primary to-primary/80 text-primary-foreground border-2 border-primary/20 shadow-sm">
+                            <Anchor className="size-4" />
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <Checklist
+                            taskId={checklistData.taskId}
+                            initialChecklist={checklistData.checklist}
+                            onUpdate={(updatedChecklist) => {
+                              setChecklistData({
+                                ...checklistData,
+                                checklist: updatedChecklist,
+                              });
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    {shouldShowRoute && (
+                      <div className={cn("flex items-start gap-4 w-full py-6", fullPage ? "px-0" : "px-6")}>
+                        <Avatar className="size-8 shrink-0 mt-0.5 ring-2 ring-primary/10">
+                          <AvatarFallback className="bg-gradient-to-br from-primary to-primary/80 text-primary-foreground border-2 border-primary/20 shadow-sm">
+                            <Anchor className="size-4" />
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <MarineMap
+                            route={routeData.route}
+                            departure={routeData.departure || routeData.route[0]}
+                            destination={routeData.destination || routeData.route[routeData.route.length - 1]}
+                            waypoints={routeData.route.length > 2 
+                              ? routeData.route.slice(1, -1) 
+                              : []}
+                            mode="route"
+                            editable={true}
+                            height="500px"
+                            onWaypointUpdate={async (index, waypoint) => {
+                              // Update waypoint in route (index + 1 because first is departure)
+                              if (routeData && routeData.route.length > index + 1) {
+                                const waypointToUpdate = routeData.route[index + 1];
+                                
+                                // Check if waypoint has an ID
+                                if (!waypointToUpdate.id) {
+                                  toast.error('Cannot update waypoint: Missing waypoint ID. Please regenerate the route.');
+                                  return;
+                                }
+                                
+                                // If waypoint has an ID, update it in the database
+                                if (waypointToUpdate.id) {
+                                  try {
+                                    const response = await honoClient.api.waypoints.$put({
+                                      json: {
+                                        waypointId: waypointToUpdate.id,
+                                        name: waypoint.name,
+                                        latitude: waypoint.lat,
+                                        longitude: waypoint.lng,
+                                      },
+                                    });
+                                    
+                                    if (!response.ok) {
+                                      toast.error('Failed to update waypoint in database');
+                                      return;
+                                    }
+                                    
+                                    const result = await response.json();
+                                    if (result.success && result.waypoint) {
+                                      // Update local state with the updated waypoint
+                                      const updatedRoute = [...routeData.route];
+                                      updatedRoute[index + 1] = {
+                                        ...waypoint,
+                                        id: result.waypoint.id,
+                                      };
+                                      setRouteData({
+                                        ...routeData,
+                                        route: updatedRoute,
+                                      });
+                                      
+                                      toast.success('Waypoint updated successfully');
+                                    } else {
+                                      toast.error('Failed to update waypoint');
+                                    }
+                                  } catch (error) {
+                                    console.error('Error updating waypoint:', error);
+                                    toast.error('Error updating waypoint. Please try again.');
+                                    // Still update local state even if API call fails
+                                    const updatedRoute = [...routeData.route];
+                                    updatedRoute[index + 1] = waypoint;
+                                    setRouteData({
+                                      ...routeData,
+                                      route: updatedRoute,
+                                    });
+                                  }
+                                } else {
+                                  // No ID, just update local state
+                                  const updatedRoute = [...routeData.route];
+                                  updatedRoute[index + 1] = waypoint;
+                                  setRouteData({
+                                    ...routeData,
+                                    route: updatedRoute,
+                                  });
+                                }
+                              }
+                            }}
+                            onWaypointDelete={async (index) => {
+                              // Remove waypoint from route
+                              // The index is 0-based in the waypoints array (which excludes departure and destination)
+                              // So we need to add 1 to get the index in the full route array
+                              if (!routeData || !routeData.route || routeData.route.length <= index + 1) {
+                                toast.error('Cannot delete waypoint: Invalid route data');
+                                return;
+                              }
+
+                              const waypointToDelete = routeData.route[index + 1];
+                              
+                              // Check if waypoint has an ID
+                              if (!waypointToDelete?.id) {
+                                toast.error('Cannot delete waypoint: Missing waypoint ID. Please regenerate the route.');
+                                return;
+                              }
+                              
+                              // If waypoint has an ID, delete it from the database
+                              if (waypointToDelete?.id) {
+                                try {
+                                  const response = await honoClient.api.waypoints.$delete({
+                                    query: {
+                                      waypointId: waypointToDelete.id,
+                                    },
+                                  });
+                                  
+                                  if (!response.ok) {
+                                    const errorText = await response.text();
+                                    console.error('Failed to delete waypoint:', response.status, errorText);
+                                    toast.error('Failed to delete waypoint from database');
+                                    return;
+                                  }
+                                  
+                                  const result = await response.json();
+                                  if (result.success) {
+                                    // Remove from local state
+                                    const updatedRoute = [...routeData.route];
+                                    updatedRoute.splice(index + 1, 1);
+                                    setRouteData({
+                                      ...routeData,
+                                      route: updatedRoute,
+                                    });
+                                    
+                                    toast.success('Waypoint deleted successfully');
+                                  } else {
+                                    toast.error('Failed to delete waypoint');
+                                  }
+                                } catch (error) {
+                                  console.error('Error deleting waypoint:', error);
+                                  toast.error('Error deleting waypoint. Please try again.');
+                                  // Still update local state even if API call fails
+                                  const updatedRoute = [...routeData.route];
+                                  updatedRoute.splice(index + 1, 1);
+                                  setRouteData({
+                                    ...routeData,
+                                    route: updatedRoute,
+                                  });
+                                }
+                              } else {
+                                // No ID, just update local state
+                                const updatedRoute = [...routeData.route];
+                                updatedRoute.splice(index + 1, 1);
+                                setRouteData({
+                                  ...routeData,
+                                  route: updatedRoute,
+                                });
+                              }
+                            }}
+                            onWaypointAdd={async (waypoint) => {
+                              // Add waypoint before destination
+                              if (routeData && routeData.route.length > 0) {
+                                const updatedRoute = [...routeData.route];
+                                updatedRoute.splice(updatedRoute.length - 1, 0, waypoint);
+                                setRouteData({
+                                  ...routeData,
+                                  route: updatedRoute,
+                                });
+                                
+                                // Note: New waypoints added via map click will need to be saved via the agent
+                                // This is just for local display
+                              }
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </React.Fragment>
+                );
               }).filter(Boolean);
             })()}
 
@@ -703,7 +983,8 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
               </div>
             )}
 
-            {showRoute && routeData && (
+
+            {showDatePicker && datePickerData && (
               <div className={cn("flex items-start gap-4 w-full py-6", fullPage ? "px-0" : "px-6")}>
                 <Avatar className="size-8 shrink-0 mt-0.5 ring-2 ring-primary/10">
                   <AvatarFallback className="bg-gradient-to-br from-primary to-primary/80 text-primary-foreground border-2 border-primary/20 shadow-sm">
@@ -711,167 +992,34 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex-1 min-w-0">
-                  <MarineMap
-                    route={routeData.route}
-                    departure={routeData.departure || routeData.route[0]}
-                    destination={routeData.destination || routeData.route[routeData.route.length - 1]}
-                    waypoints={routeData.route.length > 2 
-                      ? routeData.route.slice(1, -1) 
-                      : []}
-                    mode="route"
-                    editable={true}
-                    height="500px"
-                    onWaypointUpdate={async (index, waypoint) => {
-                      // Update waypoint in route (index + 1 because first is departure)
-                      if (routeData && routeData.route.length > index + 1) {
-                        const waypointToUpdate = routeData.route[index + 1];
-                        
-                        // Check if waypoint has an ID
-                        if (!waypointToUpdate.id) {
-                          toast.error('Cannot update waypoint: Missing waypoint ID. Please regenerate the route.');
-                          return;
-                        }
-                        
-                        // If waypoint has an ID, update it in the database
-                        if (waypointToUpdate.id) {
-                          try {
-                            const response = await honoClient.api.waypoints.$put({
-                              json: {
-                                waypointId: waypointToUpdate.id,
-                                name: waypoint.name,
-                                latitude: waypoint.lat,
-                                longitude: waypoint.lng,
-                              },
-                            });
-                            
-                            if (!response.ok) {
-                              toast.error('Failed to update waypoint in database');
-                              return;
-                            }
-                            
-                            const result = await response.json();
-                            if (result.success && result.waypoint) {
-                              // Update local state with the updated waypoint
-                              const updatedRoute = [...routeData.route];
-                              updatedRoute[index + 1] = {
-                                ...waypoint,
-                                id: result.waypoint.id,
-                              };
-                              setRouteData({
-                                ...routeData,
-                                route: updatedRoute,
-                              });
-                              toast.success('Waypoint updated successfully');
-                            } else {
-                              toast.error('Failed to update waypoint');
-                            }
-                          } catch (error) {
-                            console.error('Error updating waypoint:', error);
-                            toast.error('Error updating waypoint. Please try again.');
-                            // Still update local state even if API call fails
-                            const updatedRoute = [...routeData.route];
-                            updatedRoute[index + 1] = waypoint;
-                            setRouteData({
-                              ...routeData,
-                              route: updatedRoute,
-                            });
-                          }
-                        } else {
-                          // No ID, just update local state
-                          const updatedRoute = [...routeData.route];
-                          updatedRoute[index + 1] = waypoint;
-                          setRouteData({
-                            ...routeData,
-                            route: updatedRoute,
-                          });
-                        }
-                      }
-                    }}
-                    onWaypointDelete={async (index) => {
-                      // Remove waypoint from route
-                      // The index is 0-based in the waypoints array (which excludes departure and destination)
-                      // So we need to add 1 to get the index in the full route array
-                      if (!routeData || !routeData.route || routeData.route.length <= index + 1) {
-                        toast.error('Cannot delete waypoint: Invalid route data');
-                        return;
-                      }
-
-                      const waypointToDelete = routeData.route[index + 1];
-                      
-                      // Check if waypoint has an ID
-                      if (!waypointToDelete?.id) {
-                        toast.error('Cannot delete waypoint: Missing waypoint ID. Please regenerate the route.');
-                        return;
-                      }
-                      
-                      // If waypoint has an ID, delete it from the database
-                      if (waypointToDelete?.id) {
-                        try {
-                          const response = await honoClient.api.waypoints.$delete({
-                            query: {
-                              waypointId: waypointToDelete.id,
-                            },
-                          });
-                          
-                          if (!response.ok) {
-                            const errorText = await response.text();
-                            console.error('Failed to delete waypoint:', response.status, errorText);
-                            toast.error('Failed to delete waypoint from database');
-                            return;
-                          }
-                          
-                          const result = await response.json();
-                          if (result.success) {
-                            // Remove from local state
-                            const updatedRoute = [...routeData.route];
-                            updatedRoute.splice(index + 1, 1);
-                            setRouteData({
-                              ...routeData,
-                              route: updatedRoute,
-                            });
-                            toast.success('Waypoint deleted successfully');
-                          } else {
-                            toast.error('Failed to delete waypoint');
-                          }
-                        } catch (error) {
-                          console.error('Error deleting waypoint:', error);
-                          toast.error('Error deleting waypoint. Please try again.');
-                          // Still update local state even if API call fails
-                          const updatedRoute = [...routeData.route];
-                          updatedRoute.splice(index + 1, 1);
-                          setRouteData({
-                            ...routeData,
-                            route: updatedRoute,
-                          });
-                        }
-                      } else {
-                        // No ID, just update local state
-                        const updatedRoute = [...routeData.route];
-                        updatedRoute.splice(index + 1, 1);
-                        setRouteData({
-                          ...routeData,
-                          route: updatedRoute,
+                  <div className="bg-muted/50 rounded-lg border border-border/50 p-4 space-y-3">
+                    <p className="text-sm font-medium text-foreground">Select your departure date:</p>
+                    <DatePicker
+                      value={selectedDate}
+                      onChange={(date) => {
+                        setSelectedDate(date);
+                        // Send message to agent with selected date
+                        const dateObj = new Date(date);
+                        const formattedDate = dateObj.toLocaleDateString('en-US', {
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric',
                         });
-                      }
-                    }}
-                    onWaypointAdd={async (waypoint) => {
-                      // Add waypoint before destination
-                      if (routeData && routeData.route.length > 0) {
-                        const updatedRoute = [...routeData.route];
-                        updatedRoute.splice(updatedRoute.length - 1, 0, waypoint);
-                        setRouteData({
-                          ...routeData,
-                          route: updatedRoute,
+                        sendMessage({
+                          text: `I've selected ${date} as departure date.`,
                         });
-                        
-                        // Note: New waypoints added via map click will need to be saved via the agent
-                        // This is just for local display
-                      }
-                    }}
-                  />
+                        // Hide date picker after selection
+                        setShowDatePicker(false);
+                        setDatePickerData(null);
+                        setSelectedDate('');
+                      }}
+                      placeholder="Select departure date"
+                    />
+                  </div>
                 </div>
               </div>
             )}
+
 
             {domainSelected && (status === 'submitted' || status === 'streaming') && (
               <div className={cn("flex items-start gap-4 w-full py-4", fullPage ? "px-0" : "px-6")}>
@@ -905,7 +1053,7 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
           <ScrollToBottomButton />
         </StickToBottom>
 
-        {/* Input - only show after domain is selected, but allow input even when route is displayed */}
+        {/* Input - only show after domain is selected, but allow input even when route, date picker, or checklist is displayed */}
         {domainSelected && !showDomainSelector && !showLocationSelector && !showConfirmationSelector && (
           <div className={cn(
             "fixed bottom-0 left-0 right-0 z-50",

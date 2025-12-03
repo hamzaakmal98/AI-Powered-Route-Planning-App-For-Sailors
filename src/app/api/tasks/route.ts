@@ -134,8 +134,9 @@ function createTaskToolFactory(userId: string) {
       destinationLat: z.number().optional().describe('Latitude of destination port (required for Passage Planning)'),
       destinationLng: z.number().optional().describe('Longitude of destination port (required for Passage Planning)'),
       routeName: z.string().optional().describe('Optional name for the route (for Passage Planning)'),
+      departureDate: z.string().optional().describe('Departure date in ISO format (yyyy-MM-dd) for Passage Planning'),
     }),
-    execute: async ({ domain, task, priority, estimatedTime, departurePort, departureLat, departureLng, destinationPort, destinationLat, destinationLng, routeName }) => {
+    execute: async ({ domain, task, priority, estimatedTime, departurePort, departureLat, departureLng, destinationPort, destinationLat, destinationLng, routeName, departureDate }) => {
       try {
         const modelName = getTaskModelForDomain(domain);
         if (!modelName) {
@@ -167,19 +168,23 @@ function createTaskToolFactory(userId: string) {
             },
           });
 
-          // If there's an existing task, update it with new route information
+            // If there's an existing task, update it with new route information
           if (existingTask) {
+            const updateData: any = {
+              departurePort,
+              departureLat,
+              departureLng,
+              destinationPort,
+              destinationLat,
+              destinationLng,
+              routeName: routeName || existingTask.routeName,
+            };
+            if (departureDate !== undefined) {
+              updateData.departureDate = departureDate;
+            }
             const updatedTask = await (prisma as any).passagePlanningTask.update({
               where: { id: existingTask.id },
-              data: {
-                departurePort,
-                departureLat,
-                departureLng,
-                destinationPort,
-                destinationLat,
-                destinationLng,
-                routeName: routeName || existingTask.routeName,
-              },
+              data: updateData,
             });
 
             return {
@@ -221,6 +226,7 @@ function createTaskToolFactory(userId: string) {
               departurePort,
               departureLat,
               departureLng,
+              departureDate: departureDate || null,
               destinationPort,
               destinationLat,
               destinationLng,
@@ -307,9 +313,10 @@ function saveRouteToolFactory(userId: string) {
       routeName: z.string().optional().describe('Optional name for this route'),
       totalDistance: z.number().optional().describe('Total distance in nautical miles'),
       estimatedTime: z.string().optional().describe('Estimated passage time (e.g., "21 days")'),
+      departureDate: z.string().optional().describe('Departure date in ISO format (yyyy-MM-dd)'),
       passagePlanningTaskId: z.string().describe('ID of the Passage Planning task to update'),
     }),
-    execute: async ({ departurePort, departureLat, departureLng, destinationPort, destinationLat, destinationLng, routeName, totalDistance, estimatedTime, passagePlanningTaskId }) => {
+    execute: async ({ departurePort, departureLat, departureLng, destinationPort, destinationLat, destinationLng, routeName, totalDistance, estimatedTime, departureDate, passagePlanningTaskId }) => {
       try {
         // Verify the task exists and belongs to the user
         const task = await (prisma as any).passagePlanningTask.findUnique({
@@ -323,19 +330,23 @@ function saveRouteToolFactory(userId: string) {
         }
 
         // Update the task with route information (merged table)
+        const updateData: any = {
+          departurePort,
+          departureLat,
+          departureLng,
+          destinationPort,
+          destinationLat,
+          destinationLng,
+          routeName: routeName || task.routeName,
+          totalDistance: totalDistance || task.totalDistance,
+          routeEstimatedTime: estimatedTime || task.routeEstimatedTime,
+        };
+        if (departureDate !== undefined) {
+          updateData.departureDate = departureDate;
+        }
         const updatedTask = await (prisma as any).passagePlanningTask.update({
           where: { id: passagePlanningTaskId },
-          data: {
-            departurePort,
-            departureLat,
-            departureLng,
-            destinationPort,
-            destinationLat,
-            destinationLng,
-            routeName: routeName || task.routeName,
-            totalDistance: totalDistance || task.totalDistance,
-            routeEstimatedTime: estimatedTime || task.routeEstimatedTime,
-          },
+          data: updateData,
         });
 
         return {
@@ -735,13 +746,162 @@ function getRouteDataToolFactory(userId: string) {
   });
 }
 
+// Factory function to update departure date for a Passage Planning task
+function updateDepartureDateToolFactory(userId: string) {
+  return tool({
+    description: 'Update the departure date for a Passage Planning task. Use this when the user has selected a departure date using the date picker.',
+    inputSchema: z.object({
+      passagePlanningTaskId: z.string().describe('ID of the Passage Planning task'),
+      departureDate: z.string().describe('Departure date in ISO format (yyyy-MM-dd)'),
+    }),
+    execute: async ({ passagePlanningTaskId, departureDate }) => {
+      try {
+        // Verify the task exists and belongs to the user
+        const task = await (prisma as any).passagePlanningTask.findUnique({
+          where: { id: passagePlanningTaskId },
+        });
+
+        if (!task || task.userId !== userId) {
+          return {
+            success: false,
+            message: 'Invalid Passage Planning task ID or unauthorized.',
+          };
+        }
+
+        // Update the departure date
+        const updatedTask = await (prisma as any).passagePlanningTask.update({
+          where: { id: passagePlanningTaskId },
+          data: {
+            departureDate,
+          },
+        });
+
+        return {
+          success: true,
+          message: `Departure date has been set to ${departureDate}.`,
+          taskId: passagePlanningTaskId,
+          departureDate: updatedTask.departureDate,
+        };
+      } catch (error) {
+        console.error('Error updating departure date:', error);
+        return {
+          success: false,
+          message: 'Failed to update departure date. Please try again.',
+          error: error instanceof Error ? error.message : 'Unknown error',
+        };
+      }
+    },
+  });
+}
+
+// Factory function to create or update checklist for a Passage Planning task
+function createChecklistToolFactory(userId: string) {
+  return tool({
+    description: 'Create or update a checklist for a Passage Planning task. Use this after the user has confirmed their waypoints and you want to help them create a preparation checklist for their passage.',
+    inputSchema: z.object({
+      passagePlanningTaskId: z.string().describe('ID of the Passage Planning task'),
+      checklist: z.array(z.object({
+        category: z.string().describe('Category name (e.g., "REGULATORY COMPLIANCE", "ROUTE PLANNING", "DESTINATION PREP")'),
+        items: z.array(z.object({
+          label: z.string().describe('Item label (e.g., "Visas/Permits & Entry Visas")'),
+          checked: z.boolean().optional().describe('Whether the item is checked (default: false)'),
+        })).describe('Array of checklist items in this category'),
+      })).describe('Array of checklist categories with their items'),
+    }),
+    execute: async ({ passagePlanningTaskId, checklist }) => {
+      try {
+        // Verify the task exists and belongs to the user
+        const task = await (prisma as any).passagePlanningTask.findUnique({
+          where: { id: passagePlanningTaskId },
+        });
+
+        if (!task || task.userId !== userId) {
+          return {
+            success: false,
+            message: 'Invalid Passage Planning task ID or unauthorized.',
+          };
+        }
+
+        // Delete existing checklist items
+        await (prisma as any).checklistItem.deleteMany({
+          where: { passagePlanningTaskId },
+        });
+
+        // Create new checklist items
+        const itemsToCreate: any[] = [];
+        checklist.forEach((category) => {
+          category.items.forEach((item, index) => {
+            itemsToCreate.push({
+              passagePlanningTaskId,
+              category: category.category,
+              label: item.label,
+              checked: item.checked ?? false,
+              sequence: index,
+            });
+          });
+        });
+
+        if (itemsToCreate.length > 0) {
+          await (prisma as any).checklistItem.createMany({
+            data: itemsToCreate,
+          });
+        }
+
+        // Fetch the created checklist items with IDs
+        const createdItems = await (prisma as any).checklistItem.findMany({
+          where: { passagePlanningTaskId },
+          orderBy: [
+            { category: 'asc' },
+            { sequence: 'asc' },
+          ],
+        });
+
+        // Group by category and format for response
+        const grouped = createdItems.reduce((acc: any, item: any) => {
+          if (!acc[item.category]) {
+            acc[item.category] = [];
+          }
+          acc[item.category].push({
+            id: item.id,
+            label: item.label,
+            checked: item.checked,
+            sequence: item.sequence,
+          });
+          return acc;
+        }, {});
+
+        const formattedChecklist = Object.entries(grouped).map(([category, items]: [string, any]) => ({
+          category,
+          items: items.sort((a: any, b: any) => a.sequence - b.sequence),
+        }));
+
+        return {
+          success: true,
+          message: `Checklist created successfully with ${itemsToCreate.length} items across ${checklist.length} categories.`,
+          checklist: formattedChecklist,
+          taskId: passagePlanningTaskId,
+        };
+      } catch (error) {
+        console.error('Error creating checklist:', error);
+        return {
+          success: false,
+          message: 'Failed to create checklist. Please try again.',
+          error: error instanceof Error ? error.message : 'Unknown error',
+        };
+      }
+    },
+  });
+}
+
 function createTaskAgent(
   getUserContextTool: ReturnType<typeof getUserContextToolFactory>,
   createTaskTool: ReturnType<typeof createTaskToolFactory>,
   saveRouteTool: ReturnType<typeof saveRouteToolFactory>,
   addWaypointTool: ReturnType<typeof addWaypointToolFactory>,
   getRouteDataTool: ReturnType<typeof getRouteDataToolFactory>,
-  generateRouteTool: ReturnType<typeof generateRouteToolFactory>
+  generateRouteTool: ReturnType<typeof generateRouteToolFactory>,
+  updateDepartureDateTool: ReturnType<typeof updateDepartureDateToolFactory>,
+  createChecklistTool: ReturnType<typeof createChecklistToolFactory>
 ) {
   return new Agent({
     model: process.env.NODE_ENV === 'production' ? openai('gpt-4o-mini') : /*ollama(process.env.OLLAMA_MODEL!)*/openai('gpt-4o-mini'),
@@ -771,6 +931,8 @@ Available tools:
 - 'saveRoute': Use this to update an existing route with departure and destination ports. Note: For Passage Planning, routes are created automatically with the task using 'createTask', so you typically won't need this tool for Passage Planning.
 - 'addWaypoint': Use this to add waypoints to the current route. Call this when the user wants to add intermediate waypoints along their route.
 - 'generateRoute': Use this to automatically generate an optimal route between two points using marine routing. Call this AFTER the user has selected both departure and destination locations. This will calculate waypoints considering water depth and navigation constraints. After generating the route, use 'addWaypoint' to save each waypoint to the route. CRITICAL: After saving all waypoints, you MUST output JSON to display the route on the map: {"action": "showRoute", "route": [...], "departure": {...}, "destination": {...}}
+- 'updateDepartureDate': Use this to update the departure date for a Passage Planning task. Call this when the user has selected a departure date using the date picker. The date will be in ISO format (yyyy-MM-dd).
+- 'createChecklist': Use this to create or update a checklist for a Passage Planning task. Call this after the user has confirmed their waypoints and departure date, and you want to help them create a preparation checklist. The checklist should include categories like "REGULATORY COMPLIANCE", "ROUTE PLANNING", "DESTINATION PREP" with relevant items for their passage.
 
 CRITICAL - Domain Selection First:
 - When the conversation starts (first message) OR when a user expresses intent to create a task (e.g., "I want to create a task"), you MUST FIRST show the domain selector.
@@ -995,7 +1157,51 @@ When creating tasks:
 - For Passage Planning: Focus on route planning activities, not appraisal, execution, or monitoring phases
 
 After calling the 'createTask' tool, the task will be automatically saved to the database. Confirm with the user that the task has been added and offer further assistance.
-Keep your messages conversational and helpful. Celebrate their progress!`,
+Keep your messages conversational and helpful. Celebrate their progress!
+
+WAYPOINT EDITING, DEPARTURE DATE, AND CHECKLIST CREATION:
+- When the user edits waypoints on the map (they can drag, add, or delete waypoints), the system will automatically save those changes to the database.
+- **CRITICAL**: After waypoint editing is complete, you MUST prompt the user to confirm their waypoints by saying something like: "I see you've made changes to your route. Please type 'confirm' in the chat to confirm your waypoints are finalized."
+- **DO NOT** proceed to departure date selection until the user explicitly confirms by typing "confirm" or similar confirmation.
+- After the user confirms their waypoints (they type "confirm" or similar), you MUST:
+  1. Acknowledge their confirmation
+  2. **IMMEDIATELY ask for departure date**: "Perfect! When are you planning to depart? Please select your departure date."
+  3. **IMMEDIATELY output JSON on a separate line at the end of your message**: {"action": "showDatePicker", "type": "departure", "taskId": "[passagePlanningTaskId]"}
+  4. Wait for the user to select a date (they will send a message like "I've selected [date] as departure date")
+  5. When the user selects a date, parse the date from their message (format: yyyy-MM-dd) and call 'updateDepartureDate' tool with the passagePlanningTaskId and the selected date
+  6. After the departure date is saved, immediately guide them to create a checklist by saying something like: "Great! Now let's create a preparation checklist for your passage. I'll help you set up a comprehensive checklist covering regulatory compliance, route planning, and destination preparation."
+  7. Call 'getUserContext' to understand their journey details (departure, destination, boat type, experience level, etc.)
+  8. Use the 'createChecklist' tool to create a personalized checklist based on their route and context. The checklist should include:
+     - REGULATORY COMPLIANCE: Visas/Permits, Insurance & Travel docs, etc.
+     - ROUTE PLANNING: Waypoints & Routing Drafts, Navigation Charts Setup, etc.
+     - DESTINATION PREP: Provisioning & Supplies, Accommodations & Activities, etc.
+  9. After creating the checklist, output JSON to display it: {"action": "showChecklist", "taskId": "[passagePlanningTaskId]", "checklist": [...]}
+     - The JSON MUST be on a separate line at the very end of your message
+     - Format: {"action": "showChecklist", "taskId": "task-id-here", "checklist": [{"category": "REGULATORY COMPLIANCE", "items": [{"id": "...", "label": "...", "checked": false}, ...]}, ...]}
+  10. Provide a brief summary of the checklist you created
+  11. After the user confirms the checklist (they type "confirm" or similar), you MUST:
+     - Acknowledge their confirmation
+     - **IMMEDIATELY output JSON on a separate line at the end of your message**: {"action": "redirect", "url": "/dashboard/passage-planning?taskId=[passagePlanningTaskId]"}
+     - Replace [passagePlanningTaskId] with the actual task ID from the createTask or getRouteData response
+     - This will redirect the user to the passage planning page for their specific task
+     - Example: "Perfect! Your passage planning task is complete. You can view it on your passage planning page.
+{"action": "redirect", "url": "/dashboard/passage-planning?taskId=task-123"}"
+
+DEPARTURE DATE SELECTOR ACTION:
+- When you need the departure date, output JSON at the end of your message
+- Format: {"action": "showDatePicker", "type": "departure", "taskId": "[passagePlanningTaskId]"}
+- The JSON MUST be on a separate line at the very end of your message
+- Example: "Perfect! When are you planning to depart? Please select your departure date.
+{"action": "showDatePicker", "type": "departure", "taskId": "task-123"}"
+- After the user selects a date, they will send a message like "I've selected 2024-12-15 as departure date" or "I've selected December 15, 2024 as departure date"
+- Parse the date from their message and convert it to ISO format (yyyy-MM-dd), then call 'updateDepartureDate' tool
+
+**CRITICAL CHECKLIST DISPLAY**:
+- After creating a checklist with 'createChecklist', you MUST output JSON to display it visually
+- Format: {"action": "showChecklist", "taskId": "[passagePlanningTaskId]", "checklist": [{"category": "...", "items": [{"id": "...", "label": "...", "checked": false}, ...]}, ...]}
+- The JSON MUST be on a separate line at the very end of your message
+- Example: "I've created a comprehensive checklist for your passage from Lisbon to Bridgetown.
+{"action": "showChecklist", "taskId": "task-123", "checklist": [{"category": "REGULATORY COMPLIANCE", "items": [{"id": "item-1", "label": "Visas/Permits & Entry Visas", "checked": false}]}, ...]}"`,
     tools: {
       getUserContext: getUserContextTool,
       createTask: createTaskTool,
@@ -1003,6 +1209,8 @@ Keep your messages conversational and helpful. Celebrate their progress!`,
       saveRoute: saveRouteTool,
       addWaypoint: addWaypointTool,
       generateRoute: generateRouteTool,
+      updateDepartureDate: updateDepartureDateTool,
+      createChecklist: createChecklistTool,
     },
     stopWhen: stepCountIs(10), // Allow up to 10 steps for tool calling
     temperature: 0.7,
@@ -1065,6 +1273,8 @@ export async function POST(req: Request) {
     const addWaypointTool = addWaypointToolFactory(userId);
     const getRouteDataTool = getRouteDataToolFactory(userId);
     const generateRouteTool = generateRouteToolFactory(userId);
+    const updateDepartureDateTool = updateDepartureDateToolFactory(userId);
+    const createChecklistTool = createChecklistToolFactory(userId);
 
     // Create a new agent instance with the tools
     const taskAgent = createTaskAgent(
@@ -1073,7 +1283,9 @@ export async function POST(req: Request) {
       saveRouteTool,
       addWaypointTool,
       getRouteDataTool,
-      generateRouteTool
+      generateRouteTool,
+      updateDepartureDateTool,
+      createChecklistTool
     );
 
     // Validate messages (using deduplicated messages)
@@ -1084,6 +1296,7 @@ export async function POST(req: Request) {
     try {
       return await taskAgent.respond({
         messages: validatedMessages as any,
+
       });
     } catch (agentError: any) {
       // Handle specific OpenAI API errors related to response retrieval
@@ -1091,7 +1304,7 @@ export async function POST(req: Request) {
         console.warn('OpenAI response retrieval error (likely Experimental_Agent issue):', agentError.message);
         // This is a known issue with Experimental_Agent trying to access non-existent responses
         // Return a helpful error message to the user
-        return new Response(JSON.stringify({ 
+        return new Response(JSON.stringify({
           error: 'An error occurred while processing your request. Please try again.',
           type: 'agent_error'
         }), {
@@ -1105,7 +1318,7 @@ export async function POST(req: Request) {
   } catch (error) {
     console.error('Error in tasks API:', error);
     const errorMessage = error instanceof Error ? error.message : 'Failed to process task generation';
-    return new Response(JSON.stringify({ 
+    return new Response(JSON.stringify({
       error: errorMessage,
       details: error instanceof Error ? error.stack : undefined
     }), {

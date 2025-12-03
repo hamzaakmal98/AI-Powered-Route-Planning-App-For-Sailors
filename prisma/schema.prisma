@@ -182,6 +182,7 @@ model PassagePlanningTask {
   departurePort        String? // Departure port name
   departureLat         Float? // Departure latitude
   departureLng         Float? // Departure longitude
+  departureDate        String? // Departure date (ISO format: yyyy-MM-dd)
   destinationPort      String? // Destination port name
   destinationLat       Float? // Destination latitude
   destinationLng       Float? // Destination longitude
@@ -198,6 +199,7 @@ model PassagePlanningTask {
 
   // Relations
   waypoints Waypoint[]
+  checklistItems ChecklistItem[]
 
   @@index([userId, priority])
   @@index([userId, status])
@@ -242,4 +244,24 @@ model Waypoint {
   @@index([passagePlanningTaskId])
   @@index([passagePlanningTaskId, sequence])
   @@map("waypoints")
+}
+
+model ChecklistItem {
+  id                    String               @id @default(uuid())
+  passagePlanningTaskId String // Link to Passage Planning task
+  passagePlanningTask   PassagePlanningTask  @relation(fields: [passagePlanningTaskId], references: [id], onDelete: Cascade)
+
+  // Checklist item information
+  category String // Category name (e.g., "REGULATORY COMPLIANCE", "ROUTE PLANNING")
+  label    String // Item label (e.g., "Visas/Permits & Entry Visas")
+  checked  Boolean @default(false) // Whether the item is checked
+  sequence Int // Order within category
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([passagePlanningTaskId])
+  @@index([passagePlanningTaskId, category, sequence])
+  @@map("checklist_items")
 }
