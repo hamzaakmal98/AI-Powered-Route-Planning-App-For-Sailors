@@ -430,4 +430,288 @@ const app = new Hono()
     }
   })
 
+  // Get a passage planning task by ID
+  .get("/passage-planning-task/:id", async (c) => {
+    const userId = await ExtractUserIdFromCookie(c)
+    if (!userId) {
+      return c.json({error: "Unauthorized"}, 401)
+    }
+
+    const taskId = c.req.param('id')
+
+    if (!taskId) {
+      return c.json({error: "Task ID is required"}, 400)
+    }
+
+    // Get the task with waypoints and checklist items
+    const task = await (prisma as any).passagePlanningTask.findUnique({
+      where: { id: taskId },
+      include: {
+        waypoints: {
+          orderBy: { sequence: 'asc' },
+        },
+        checklistItems: {
+          orderBy: [
+            { category: 'asc' },
+            { sequence: 'asc' },
+          ],
+        },
+      },
+    })
+
+    if (!task) {
+      return c.json({error: "Task not found"}, 404)
+    }
+
+    if (task.userId !== userId) {
+      return c.json({error: "Unauthorized"}, 403)
+    }
+
+    // Group checklist items by category
+    const grouped = task.checklistItems.reduce((acc: any, item: any) => {
+      if (!acc[item.category]) {
+        acc[item.category] = []
+      }
+      acc[item.category].push({
+        id: item.id,
+        label: item.label,
+        checked: item.checked,
+        sequence: item.sequence,
+      })
+      return acc
+    }, {})
+
+    const checklist = Object.entries(grouped).map(([category, items]: [string, any]) => ({
+      category,
+      items: items.sort((a: any, b: any) => a.sequence - b.sequence),
+    }))
+
+    return c.json({
+      success: true,
+      task: {
+        id: task.id,
+        task: task.task,
+        priority: task.priority,
+        estimatedTime: task.estimatedTime,
+        status: task.status,
+        progress: task.progress,
+        routeName: task.routeName,
+        departurePort: task.departurePort,
+        departureLat: task.departureLat,
+        departureLng: task.departureLng,
+        departureDate: task.departureDate,
+        destinationPort: task.destinationPort,
+        destinationLat: task.destinationLat,
+        destinationLng: task.destinationLng,
+        totalDistance: task.totalDistance,
+        routeEstimatedTime: task.routeEstimatedTime,
+        routeStatus: task.routeStatus,
+        waypoints: task.waypoints,
+        checklist,
+      },
+    })
+  })
+
+  // Complete a passage planning task
+  .post("/passage-planning-task/:id/complete", async (c) => {
+    const userId = await ExtractUserIdFromCookie(c)
+    if (!userId) {
+      return c.json({error: "Unauthorized"}, 401)
+    }
+
+    const taskId = c.req.param('id')
+
+    if (!taskId) {
+      return c.json({error: "Task ID is required"}, 400)
+    }
+
+    try {
+      // Get the task with checklist items and waypoints
+      const task = await (prisma as any).passagePlanningTask.findUnique({
+        where: { id: taskId },
+        include: {
+          checklistItems: true,
+          waypoints: true,
+          user: {
+            select: {
+              onboardingData: true,
+            },
+          },
+        },
+      })
+
+      if (!task) {
+        return c.json({error: "Task not found"}, 404)
+      }
+
+      if (task.userId !== userId) {
+        return c.json({error: "Unauthorized"}, 403)
+      }
+
+      // Check if all checklist items are completed
+      const allChecked = task.checklistItems.length > 0 && task.checklistItems.every((item: any) => item.checked)
+
+      if (!allChecked) {
+        return c.json({
+          error: "Cannot complete task",
+          message: "Please complete all checklist items before finishing the task.",
+          allChecked: false,
+        }, 400)
+      }
+
+      // Mark task as completed
+      const updatedTask = await (prisma as any).passagePlanningTask.update({
+        where: { id: taskId },
+        data: {
+          status: 'completed',
+          progress: 100,
+          completedAt: new Date(),
+        },
+      })
+
+      // Get current domain progress
+      const currentDomainProgress = await prisma.domainProgress.findUnique({
+        where: {
+          userId_name: {
+            userId: userId,
+            name: 'Passage Planning',
+          },
+        },
+      })
+
+      const currentProgress = currentDomainProgress?.progress || 0
+
+      // Generate incremental progress increase using LLM
+      const taskData = {
+        task: task.task,
+        departurePort: task.departurePort,
+        destinationPort: task.destinationPort,
+        waypointCount: task.waypoints?.length || 0,
+        checklistItems: task.checklistItems.length,
+        allChecklistCompleted: true,
+      }
+
+      const userContext = {
+        onboardingData: task.user?.onboardingData || {},
+        completedTask: taskData,
+        currentDomainProgress: currentProgress,
+      }
+
+      const systemPrompt = `You are First Mate, Knot Ready's sailing preparation assistant. A user has just completed a Passage Planning task. Based on this completion, calculate a reasonable incremental increase (0-15%) to their Passage Planning domain progress.
+
+IMPORTANT RULES:
+- The increase should be incremental (typically 5-12% per task completion)
+- More complex tasks (many waypoints, comprehensive checklists) can increase by 10-15%
+- Simpler tasks should increase by 5-8%
+- Never suggest an increase that would exceed 100% total progress
+- Consider the current progress level - users closer to 100% should get smaller increases
+
+Return ONLY a valid JSON object with the incremental increase percentage (not the total). Example:
+{
+  "increase": 8
+}`
+
+      const userPrompt = `The user has completed this Passage Planning task:
+${JSON.stringify(taskData, null, 2)}
+
+Current Passage Planning domain progress: ${currentProgress}%
+
+Calculate a reasonable incremental increase (0-15%) for completing this task. Return a JSON object with the "increase" percentage.`
+
+      let updatedProgress = currentProgress
+      try {
+        const result = await generateText({
+          model: process.env.NODE_ENV === 'production' ? openai('gpt-4o-mini') : openai("gpt-4o-mini"),
+          system: systemPrompt,
+          prompt: userPrompt,
+          temperature: 0.5, // Lower temperature for more consistent results
+        })
+
+        const text = result.text.trim()
+        const jsonMatch = text.match(/\{[\s\S]*\}/)
+        if (jsonMatch) {
+          const progressData = JSON.parse(jsonMatch[0]) as Record<string, number>
+          const increase = progressData["increase"] || progressData["increment"] || progressData["Passage Planning"]
+          
+          // Handle both incremental increase and absolute value (for backward compatibility)
+          let calculatedProgress: number
+          if (increase <= 15) {
+            // Likely an incremental increase
+            calculatedProgress = Math.min(100, currentProgress + Math.round(increase))
+          } else {
+            // Likely an absolute value, convert to incremental (cap at 15%)
+            const diff = increase - currentProgress
+            calculatedProgress = Math.min(100, currentProgress + Math.min(15, Math.max(0, Math.round(diff))))
+          }
+
+          // Additional safety: cap the increase at 15% maximum
+          const maxIncrease = Math.min(15, 100 - currentProgress)
+          calculatedProgress = Math.min(100, currentProgress + maxIncrease)
+          
+          if (calculatedProgress >= 0 && calculatedProgress <= 100) {
+            // Update domain progress
+            await prisma.domainProgress.upsert({
+              where: {
+                userId_name: {
+                  userId: userId,
+                  name: 'Passage Planning',
+                },
+              },
+              update: {
+                progress: calculatedProgress,
+              },
+              create: {
+                userId: userId,
+                name: 'Passage Planning',
+                progress: calculatedProgress,
+              },
+            })
+            updatedProgress = calculatedProgress
+          }
+        }
+      } catch (llmError) {
+        console.error('Error updating domain progress with LLM:', llmError)
+        // Fallback: use a conservative default increase of 8%
+        const fallbackIncrease = Math.min(8, 100 - currentProgress)
+        const fallbackProgress = Math.min(100, currentProgress + fallbackIncrease)
+        
+        await prisma.domainProgress.upsert({
+          where: {
+            userId_name: {
+              userId: userId,
+              name: 'Passage Planning',
+            },
+          },
+          update: {
+            progress: fallbackProgress,
+          },
+          create: {
+            userId: userId,
+            name: 'Passage Planning',
+            progress: fallbackProgress,
+          },
+        })
+        updatedProgress = fallbackProgress
+      }
+
+      return c.json({
+        success: true,
+        message: "Task completed successfully",
+        task: {
+          id: updatedTask.id,
+          status: updatedTask.status,
+          progress: updatedTask.progress,
+          completedAt: updatedTask.completedAt,
+        },
+        domainProgress: updatedProgress !== null ? {
+          name: 'Passage Planning',
+          progress: updatedProgress,
+        } : null,
+      })
+    } catch (error) {
+      console.error("Error completing task:", error)
+      return c.json({error: "Failed to complete task"}, 500)
+    }
+  })
+
 export default app

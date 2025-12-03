@@ -47,6 +47,7 @@ export default function DashboardPage() {
   const [editingDomain, setEditingDomain] = useState<string | null>(null);
   const [editingProgress, setEditingProgress] = useState<number>(0);
   const [savingDomain, setSavingDomain] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'ready' | 'in_progress' | 'completed'>('all');
   const [tasksData, setTasksData] = useState<{
     priorities: Array<{
       id: string;
@@ -193,7 +194,12 @@ export default function DashboardPage() {
   }
 
   // Use generated tasks data or fallback to empty structure
-  const priorities = tasksData?.priorities || [];
+  const allPriorities = tasksData?.priorities || [];
+  
+  // Filter tasks by status
+  const priorities = statusFilter === 'all' 
+    ? allPriorities 
+    : allPriorities.filter(task => task.status === statusFilter);
 
   // Icon mapping for domains
   const domainIconMap: Record<string, typeof Shield> = {
@@ -324,6 +330,38 @@ export default function DashboardPage() {
               Generate Task
             </Button>
           </div>
+
+          {/* Status Filter */}
+          <div className="mb-6 flex flex-wrap gap-2">
+            <Button
+              variant={statusFilter === 'all' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setStatusFilter('all')}
+            >
+              All ({allPriorities.length})
+            </Button>
+            <Button
+              variant={statusFilter === 'ready' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setStatusFilter('ready')}
+            >
+              Ready ({allPriorities.filter(t => t.status === 'ready').length})
+            </Button>
+            <Button
+              variant={statusFilter === 'in_progress' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setStatusFilter('in_progress')}
+            >
+              In Progress ({allPriorities.filter(t => t.status === 'in_progress').length})
+            </Button>
+            <Button
+              variant={statusFilter === 'completed' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setStatusFilter('completed')}
+            >
+              Completed ({allPriorities.filter(t => t.status === 'completed').length})
+            </Button>
+          </div>
           {priorities.length === 0 ? (
             <Card>
               <CardContent className="pt-6">
@@ -349,22 +387,56 @@ export default function DashboardPage() {
               >
                 <CardHeader>
                   <div className="flex items-start justify-between mb-2">
-                    <Badge
-                      variant={
-                        priority.status === "in_progress"
-                          ? "default"
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        variant={
+                          priority.status === "in_progress"
+                            ? "default"
+                            : priority.status === "ready"
+                            ? "secondary"
+                            : priority.status === "completed"
+                            ? "default"
+                            : "outline"
+                        }
+                        className="text-xs"
+                      >
+                        Priority {priority.priority}
+                      </Badge>
+                      <Badge
+                        variant={
+                          priority.status === "completed"
+                            ? "default"
+                            : priority.status === "in_progress"
+                            ? "secondary"
+                            : priority.status === "ready"
+                            ? "outline"
+                            : "outline"
+                        }
+                        className={`text-xs ${
+                          priority.status === "completed"
+                            ? "bg-slate-600 text-white"
+                            : priority.status === "in_progress"
+                            ? "bg-blue-500 text-white"
+                            : priority.status === "locked"
+                            ? "bg-gray-500 text-white"
+                            : ""
+                        }`}
+                      >
+                        {priority.status === "completed"
+                          ? "Completed"
+                          : priority.status === "in_progress"
+                          ? "In Progress"
                           : priority.status === "ready"
-                          ? "secondary"
-                          : "outline"
-                      }
-                      className="text-xs"
-                    >
-                      Priority {priority.priority}
-                    </Badge>
+                          ? "Ready"
+                          : "Locked"}
+                      </Badge>
+                    </div>
                     {priority.status === "locked" ? (
                       <Lock className="h-4 w-4 text-muted-foreground" />
                     ) : priority.status === "in_progress" ? (
                       <Unlock className="h-4 w-4 text-primary" />
+                    ) : priority.status === "completed" ? (
+                      <CheckCircle2 className="h-4 w-4 text-slate-600" />
                     ) : (
                       <CheckCircle2 className="h-4 w-4 text-primary" />
                     )}
@@ -400,17 +472,31 @@ export default function DashboardPage() {
                     )}
                     <Button
                       variant={
-                        priority.status === "locked" ? "outline" : "default"
+                        priority.status === "locked" || priority.status === "completed"
+                          ? "outline"
+                          : "default"
                       }
                       className="w-full"
-                      disabled={priority.status === "locked"}
+                      disabled={priority.status === "locked" || priority.status === "completed"}
+                      onClick={() => {
+                        if (priority.status === "locked" || priority.status === "completed") return;
+                        // Redirect to passage planning detail page for Passage Planning tasks
+                        if (priority.domain === "Passage Planning") {
+                          router.push(`/dashboard/passage-planning/${priority.id}`);
+                        }
+                        // For other domains, you can add navigation logic here if needed
+                      }}
                     >
                       {priority.status === "locked"
                         ? "Locked"
+                        : priority.status === "completed"
+                        ? "Completed"
                         : priority.status === "in_progress"
                         ? "Continue"
                         : "Start"}
-                      <ArrowRight className="ml-2 h-4 w-4" />
+                      {priority.status !== "locked" && priority.status !== "completed" && (
+                        <ArrowRight className="ml-2 h-4 w-4" />
+                      )}
                     </Button>
                   </div>
                 </CardContent>

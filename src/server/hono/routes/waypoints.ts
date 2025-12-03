@@ -3,6 +3,117 @@ import {prisma} from "@/lib/prisma";
 import {ExtractUserIdFromCookie} from "@/server/hono/routes/utils";
 
 const app = new Hono()
+  // Get waypoints for a task
+  .get("/", async (c) => {
+    const userId = await ExtractUserIdFromCookie(c)
+    if (!userId) {
+      return c.json({error: "Unauthorized"}, 401)
+    }
+
+    const taskId = c.req.query('taskId')
+
+    if (!taskId) {
+      return c.json({error: "Task ID is required"}, 400)
+    }
+
+    // Verify the task exists and belongs to the user
+    const task = await (prisma as any).passagePlanningTask.findUnique({
+      where: { id: taskId },
+    })
+
+    if (!task || task.userId !== userId) {
+      return c.json({error: "Task not found or unauthorized"}, 404)
+    }
+
+    // Get all waypoints for this task
+    const waypoints = await (prisma as any).waypoint.findMany({
+      where: { passagePlanningTaskId: taskId },
+      orderBy: { sequence: 'asc' },
+    })
+
+    return c.json({
+      success: true,
+      waypoints,
+    })
+  })
+
+  // Create a new waypoint
+  .post("/", async (c) => {
+    const userId = await ExtractUserIdFromCookie(c)
+    if (!userId) {
+      return c.json({error: "Unauthorized"}, 401)
+    }
+
+    let payload: {
+      taskId: string;
+      name: string;
+      latitude: number;
+      longitude: number;
+      course?: number;
+      distance?: number;
+      notes?: string;
+    } = {} as any
+
+    try {
+      payload = await c.req.json()
+    } catch (error) {
+      return c.json({error: "Invalid payload"}, 400)
+    }
+
+    const { taskId, name, latitude, longitude, course, distance, notes } = payload
+
+    if (!taskId || !name || latitude === undefined || longitude === undefined) {
+      return c.json({error: "Task ID, name, latitude, and longitude are required"}, 400)
+    }
+
+    // Verify the task exists and belongs to the user
+    const task = await (prisma as any).passagePlanningTask.findUnique({
+      where: { id: taskId },
+      include: {
+        waypoints: {
+          orderBy: { sequence: 'desc' },
+        },
+      },
+    })
+
+    if (!task || task.userId !== userId) {
+      return c.json({error: "Task not found or unauthorized"}, 404)
+    }
+
+    // Get the next sequence number
+    const nextSequence = task.waypoints.length > 0
+      ? task.waypoints[0].sequence + 1
+      : 1
+
+    // Create the waypoint
+    const waypoint = await (prisma as any).waypoint.create({
+      data: {
+        passagePlanningTaskId: taskId,
+        name,
+        latitude,
+        longitude,
+        sequence: nextSequence,
+        course: course || null,
+        distance: distance || null,
+        notes: notes || null,
+      },
+    })
+
+    return c.json({
+      success: true,
+      waypoint: {
+        id: waypoint.id,
+        name: waypoint.name,
+        latitude: waypoint.latitude,
+        longitude: waypoint.longitude,
+        sequence: waypoint.sequence,
+        course: waypoint.course,
+        distance: waypoint.distance,
+        notes: waypoint.notes,
+      },
+    })
+  })
+
   .put("/", async (c) => {
     const userId = await ExtractUserIdFromCookie(c)
     if (!userId) {
