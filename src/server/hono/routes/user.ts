@@ -5,6 +5,21 @@ import {generateText} from 'ai';
 import {ollama} from 'ollama-ai-provider-v2';
 import {openai} from "@ai-sdk/openai";
 
+// Get GPT model name from environment variable, default to gpt-4o-mini
+const GPT_MODEL = process.env.GPT_MODEL || 'gpt-4o-mini';
+// Get Ollama model name from environment variable, default to llama2
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama2';
+// Determine which LLM provider to use: 'ollama' or 'openai' (default: 'openai')
+const LLM_PROVIDER = (process.env.LLM_PROVIDER || 'openai').toLowerCase();
+
+// Helper function to get the appropriate model based on LLM_PROVIDER env var
+function getModel() {
+  if (LLM_PROVIDER === 'ollama') {
+    return ollama(OLLAMA_MODEL);
+  }
+  return openai(GPT_MODEL);
+}
+
 /**
  * Generates estimated progress for all domains based on onboarding data using LLM
  * @param onboardingData - The user's onboarding form data
@@ -53,7 +68,7 @@ Return a JSON object with progress estimates (0-100) for each of these domains: 
 
   try {
     const result = await generateText({
-      model: process.env.NODE_ENV === 'production' ? openai('gpt-4o-mini') : /*ollama(process.env.OLLAMA_MODEL!)*/ openai("gpt-4o-mini"),
+      model: getModel(),
       system: systemPrompt,
       prompt: userPrompt,
       temperature: 0.7,
@@ -621,7 +636,7 @@ Calculate a reasonable incremental increase (0-15%) for completing this task. Re
       let updatedProgress = currentProgress
       try {
         const result = await generateText({
-          model: process.env.NODE_ENV === 'production' ? openai('gpt-4o-mini') : openai("gpt-4o-mini"),
+          model: getModel(),
           system: systemPrompt,
           prompt: userPrompt,
           temperature: 0.5, // Lower temperature for more consistent results

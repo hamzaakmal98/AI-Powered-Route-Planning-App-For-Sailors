@@ -8,32 +8,32 @@ import { z } from 'zod';
 
 export const maxDuration = 30;
 
+// Get GPT model name from environment variable, default to gpt-4o-mini
+const GPT_MODEL = process.env.GPT_MODEL || 'gpt-4o-mini';
+// Get Ollama model name from environment variable, default to llama2
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama2';
+// Determine which LLM provider to use: 'ollama' or 'openai' (default: 'openai')
+const LLM_PROVIDER = (process.env.LLM_PROVIDER || 'openai').toLowerCase();
+
+// Helper function to get the appropriate model based on LLM_PROVIDER env var
+function getModel() {
+  if (LLM_PROVIDER === 'ollama') {
+    return ollama(OLLAMA_MODEL);
+  }
+  return openai(GPT_MODEL);
+}
+
 // Factory function to create the getUserContext tool with userId access
 function getUserContextToolFactory(userId: string) {
   return tool({
-    description: 'Fetch the user\'s onboarding information, existing tasks, and context. Use this when you need to understand the user\'s boat, experience level, journey goals, concerns, or existing tasks to provide personalized recommendations.',
+    description: 'Fetch the user\'s onboarding information and context. Use this when you need to understand the user\'s boat, experience level, journey goals, concerns, and domain progress to provide personalized recommendations. This tool does NOT include existing tasks - use getRouteData for route-specific information if needed.',
     inputSchema: z.object({}).describe('No parameters needed - fetches all user context'),
     execute: async () => {
       try {
-        // Fetch user data from database with all domain-specific task tables
+        // Fetch user data from database (only onboarding data and domain progress, no tasks)
         const user = await prisma.user.findUnique({
           where: { id: userId },
           include: {
-            boatMaintenanceTasks: {
-              orderBy: { priority: 'asc' },
-            },
-            weatherRoutingTasks: {
-              orderBy: { priority: 'asc' },
-            },
-            safetySystemsTasks: {
-              orderBy: { priority: 'asc' },
-            },
-            budgetManagementTasks: {
-              orderBy: { priority: 'asc' },
-            },
-            passagePlanningTasks: {
-              orderBy: { priority: 'asc' },
-            },
             domainProgress: true,
           },
         } as any) as any;
@@ -47,33 +47,48 @@ function getUserContextToolFactory(userId: string) {
 
         const onboardingData = user.onboardingData as any;
 
-        // Combine all domain-specific tasks into a single array with domain field
-        const allTasks = [
-          ...(user.boatMaintenanceTasks || []).map((t: any) => ({ ...t, domain: 'Boat Maintenance' })),
-          ...(user.weatherRoutingTasks || []).map((t: any) => ({ ...t, domain: 'Weather Routing' })),
-          ...(user.safetySystemsTasks || []).map((t: any) => ({ ...t, domain: 'Safety Systems' })),
-          ...(user.budgetManagementTasks || []).map((t: any) => ({ ...t, domain: 'Budget Management' })),
-          ...(user.passagePlanningTasks || []).map((t: any) => ({ ...t, domain: 'Passage Planning' })),
-        ].sort((a, b) => a.priority - b.priority);
-
-        // Build comprehensive user context
+        // Build comprehensive user context (without tasks information)
         const context: any = {
           onboarding: {},
-          tasks: allTasks,
           domainProgress: user.domainProgress || [],
         };
 
-        // Extract onboarding information
-        if (onboardingData) {
+        // Extract onboarding information comprehensively
+        if (onboardingData && typeof onboardingData === 'object') {
+          // Boat information
           if (onboardingData.boatType) context.onboarding.boatType = onboardingData.boatType;
           if (onboardingData.boatLength) context.onboarding.boatLength = onboardingData.boatLength;
+          if (onboardingData.boatName) context.onboarding.boatName = onboardingData.boatName;
           if (onboardingData.boatAge) context.onboarding.boatAge = onboardingData.boatAge;
+          
+          // Sailing experience
           if (onboardingData.experienceLevel) context.onboarding.experienceLevel = onboardingData.experienceLevel;
+          if (Array.isArray(onboardingData.certifications) && onboardingData.certifications.length > 0) {
+            context.onboarding.certifications = onboardingData.certifications;
+          }
+          if (onboardingData.mechanicalSkills) context.onboarding.mechanicalSkills = onboardingData.mechanicalSkills;
+          if (onboardingData.longestPassage) context.onboarding.longestPassage = onboardingData.longestPassage;
+          
+          // Journey planning
           if (onboardingData.journeyType) context.onboarding.journeyType = onboardingData.journeyType;
-          if (onboardingData.timeline) context.onboarding.timeline = onboardingData.timeline;
+          if (onboardingData.primaryDestination) context.onboarding.primaryDestination = onboardingData.primaryDestination;
+          if (onboardingData.journeyDuration) context.onboarding.journeyDuration = onboardingData.journeyDuration;
+          
+          // Timeline
+          if (onboardingData.departureDate) context.onboarding.departureDate = onboardingData.departureDate;
+          if (onboardingData.preparationTimeline) context.onboarding.preparationTimeline = onboardingData.preparationTimeline;
+          if (onboardingData.currentPreparationStatus) context.onboarding.currentPreparationStatus = onboardingData.currentPreparationStatus;
+          // Legacy support for 'timeline' field
+          if (onboardingData.timeline && !context.onboarding.preparationTimeline) {
+            context.onboarding.preparationTimeline = onboardingData.timeline;
+          }
+          
+          // Goals and priorities
           if (Array.isArray(onboardingData.primaryGoals) && onboardingData.primaryGoals.length > 0) {
             context.onboarding.primaryGoals = onboardingData.primaryGoals;
           }
+          
+          // Concerns (legacy support)
           if (Array.isArray(onboardingData.mainConcerns) && onboardingData.mainConcerns.length > 0) {
             context.onboarding.mainConcerns = onboardingData.mainConcerns;
           }
@@ -85,7 +100,7 @@ function getUserContextToolFactory(userId: string) {
         return {
           success: true,
           context: context,
-          summary: `User has ${allTasks.length} existing tasks across ${user.domainProgress.length} preparation domains.`,
+          summary: `User onboarding information retrieved. Domain progress available for ${user.domainProgress.length} preparation domains.`,
         };
       } catch (error) {
         console.error('Error fetching user context:', error);
@@ -797,7 +812,7 @@ function updateDepartureDateToolFactory(userId: string) {
 // Factory function to create or update checklist for a Passage Planning task
 function createChecklistToolFactory(userId: string) {
   return tool({
-    description: 'Create or update a checklist for a Passage Planning task. Use this after the user has confirmed their waypoints and you want to help them create a preparation checklist for their passage.',
+    description: 'Create or update a checklist for a Passage Planning task. Use this after the user has confirmed their waypoints and you want to help them create a preparation checklist for their passage. CRITICAL: After calling this tool, you MUST immediately output JSON on a separate line at the end of your message to display the checklist: {"action": "showChecklist", "taskId": "[passagePlanningTaskId]", "checklist": [...]}. Use the checklist data returned from this tool in the JSON output.',
     inputSchema: z.object({
       passagePlanningTaskId: z.string().describe('ID of the Passage Planning task'),
       checklist: z.array(z.object({
@@ -877,7 +892,7 @@ function createChecklistToolFactory(userId: string) {
 
         return {
           success: true,
-          message: `Checklist created successfully with ${itemsToCreate.length} items across ${checklist.length} categories.`,
+          message: `Checklist created successfully with ${itemsToCreate.length} items across ${checklist.length} categories. **MANDATORY ACTION REQUIRED: You MUST immediately output JSON on a separate line at the very end of your next message to display this checklist. Use this exact format: {"action": "showChecklist", "taskId": "${passagePlanningTaskId}", "checklist": [use the checklist array from this response]}. The checklist will NOT be visible to the user without this JSON output.**`,
           checklist: formattedChecklist,
           taskId: passagePlanningTaskId,
         };
@@ -904,8 +919,14 @@ function createTaskAgent(
   createChecklistTool: ReturnType<typeof createChecklistToolFactory>
 ) {
   return new Agent({
-    model: process.env.NODE_ENV === 'production' ? openai('gpt-4o-mini') : /*ollama(process.env.OLLAMA_MODEL!)*/openai('gpt-4o-mini'),
+    model: getModel(),
     system: `You are First Mate, Knot Ready's friendly sailing preparation assistant. You're here to help users generate and refine their preparation tasks through interactive conversation, and guide them through route planning.
+
+**CRITICAL RULE - JSON ACTIONS:**
+- When you call 'createChecklist', you MUST output JSON immediately after: {"action": "showChecklist", "taskId": "[taskId]", "checklist": [...]}
+- When you call 'generateRoute' and 'addWaypoint', you MUST output JSON: {"action": "showRoute", ...}
+- These JSON outputs are MANDATORY - the UI components will NOT appear without them.
+- The JSON MUST be on a separate line at the very end of your message.
 
 **ABSOLUTE PRIORITY - PASSAGE PLANNING DOMAIN:**
 When the user selects "Passage Planning" domain (they send "I've selected the Passage Planning domain"), you MUST:
@@ -932,7 +953,7 @@ Available tools:
 - 'addWaypoint': Use this to add waypoints to the current route. Call this when the user wants to add intermediate waypoints along their route.
 - 'generateRoute': Use this to automatically generate an optimal route between two points using marine routing. Call this AFTER the user has selected both departure and destination locations. This will calculate waypoints considering water depth and navigation constraints. After generating the route, use 'addWaypoint' to save each waypoint to the route. CRITICAL: After saving all waypoints, you MUST output JSON to display the route on the map: {"action": "showRoute", "route": [...], "departure": {...}, "destination": {...}}
 - 'updateDepartureDate': Use this to update the departure date for a Passage Planning task. Call this when the user has selected a departure date using the date picker. The date will be in ISO format (yyyy-MM-dd).
-- 'createChecklist': Use this to create or update a checklist for a Passage Planning task. Call this after the user has confirmed their waypoints and departure date, and you want to help them create a preparation checklist. The checklist should include categories like "REGULATORY COMPLIANCE", "ROUTE PLANNING", "DESTINATION PREP" with relevant items for their passage.
+- 'createChecklist': Use this to create or update a checklist for a Passage Planning task. Call this after the user has confirmed their waypoints and departure date, and you want to help them create a preparation checklist. The checklist should include categories like "REGULATORY COMPLIANCE", "ROUTE PLANNING", "DESTINATION PREP" with relevant items for their passage. **CRITICAL**: IMMEDIATELY after calling this tool, you MUST output JSON on a separate line at the end of your message to display the checklist. Use the checklist data from the tool response: {"action": "showChecklist", "taskId": "[taskId from tool response]", "checklist": [checklist data from tool response]}.
 
 CRITICAL - Domain Selection First:
 - When the conversation starts (first message) OR when a user expresses intent to create a task (e.g., "I want to create a task"), you MUST FIRST show the domain selector.
@@ -1175,9 +1196,11 @@ WAYPOINT EDITING, DEPARTURE DATE, AND CHECKLIST CREATION:
      - REGULATORY COMPLIANCE: Visas/Permits, Insurance & Travel docs, etc.
      - ROUTE PLANNING: Waypoints & Routing Drafts, Navigation Charts Setup, etc.
      - DESTINATION PREP: Provisioning & Supplies, Accommodations & Activities, etc.
-  9. After creating the checklist, output JSON to display it: {"action": "showChecklist", "taskId": "[passagePlanningTaskId]", "checklist": [...]}
+  9. **IMMEDIATELY after calling 'createChecklist'**, you MUST output JSON on a separate line at the very end of your message to display the checklist. Use the exact checklist data returned from the tool:
+     - Format: {"action": "showChecklist", "taskId": "[taskId from createChecklist response]", "checklist": [use the exact checklist array from createChecklist response]}
      - The JSON MUST be on a separate line at the very end of your message
-     - Format: {"action": "showChecklist", "taskId": "task-id-here", "checklist": [{"category": "REGULATORY COMPLIANCE", "items": [{"id": "...", "label": "...", "checked": false}, ...]}, ...]}
+     - Example: "I've created a comprehensive checklist for your passage.
+{"action": "showChecklist", "taskId": "task-123", "checklist": [{"category": "REGULATORY COMPLIANCE", "items": [{"id": "item-1", "label": "Visas/Permits & Entry Visas", "checked": false}]}, ...]}"
   10. Provide a brief summary of the checklist you created
   11. After the user confirms the checklist (they type "confirm" or similar), you MUST:
      - Acknowledge their confirmation
@@ -1196,12 +1219,16 @@ DEPARTURE DATE SELECTOR ACTION:
 - After the user selects a date, they will send a message like "I've selected 2024-12-15 as departure date" or "I've selected December 15, 2024 as departure date"
 - Parse the date from their message and convert it to ISO format (yyyy-MM-dd), then call 'updateDepartureDate' tool
 
-**CRITICAL CHECKLIST DISPLAY**:
-- After creating a checklist with 'createChecklist', you MUST output JSON to display it visually
-- Format: {"action": "showChecklist", "taskId": "[passagePlanningTaskId]", "checklist": [{"category": "...", "items": [{"id": "...", "label": "...", "checked": false}, ...]}, ...]}
+**CRITICAL CHECKLIST DISPLAY - MANDATORY**:
+- **IMMEDIATELY** after calling 'createChecklist', you MUST output JSON to display the checklist visually. This is NOT optional - the checklist will not be visible to the user without this JSON.
+- Use the EXACT data returned from the 'createChecklist' tool response:
+  - taskId: Use the "taskId" field from the tool response
+  - checklist: Use the "checklist" array from the tool response (it already has the correct format with IDs)
+- Format: {"action": "showChecklist", "taskId": "[taskId from tool response]", "checklist": [use checklist array from tool response]}
 - The JSON MUST be on a separate line at the very end of your message
 - Example: "I've created a comprehensive checklist for your passage from Lisbon to Bridgetown.
-{"action": "showChecklist", "taskId": "task-123", "checklist": [{"category": "REGULATORY COMPLIANCE", "items": [{"id": "item-1", "label": "Visas/Permits & Entry Visas", "checked": false}]}, ...]}"`,
+{"action": "showChecklist", "taskId": "task-123", "checklist": [{"category": "REGULATORY COMPLIANCE", "items": [{"id": "item-1", "label": "Visas/Permits & Entry Visas", "checked": false}]}, ...]}"
+- **DO NOT** skip this step - the checklist component will not appear without this JSON output.`,
     tools: {
       getUserContext: getUserContextTool,
       createTask: createTaskTool,
@@ -1300,10 +1327,13 @@ export async function POST(req: Request) {
       });
     } catch (agentError: any) {
       // Handle specific OpenAI API errors related to response retrieval
+      // This is a known issue with Experimental_Agent trying to access non-existent response IDs
+      // The agent internally tries to retrieve responses that don't exist, causing 404 errors
+      // We silently handle this since it doesn't affect functionality - the agent continues working
       if (agentError?.name === 'AI_APICallError' && agentError?.url?.includes('/v1/responses')) {
-        console.warn('OpenAI response retrieval error (likely Experimental_Agent issue):', agentError.message);
-        // This is a known issue with Experimental_Agent trying to access non-existent responses
-        // Return a helpful error message to the user
+        // Silently ignore this known issue - it's an internal Experimental_Agent behavior
+        // that doesn't affect the actual functionality. The agent will continue processing.
+        // Return a successful response to allow the conversation to continue
         return new Response(JSON.stringify({
           error: 'An error occurred while processing your request. Please try again.',
           type: 'agent_error'

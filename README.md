@@ -30,8 +30,16 @@ OAUTH_CODE_VERIFIER="your-oauth-code-verifier"
 # Site URL
 NEXT_PUBLIC_SITE_URL="http://localhost:3000"
 
-# OpenAI API (for AI features)
+# LLM Provider Configuration
+# Choose which LLM provider to use: 'openai' or 'ollama' (default: 'openai')
+LLM_PROVIDER="openai"
+
+# OpenAI Configuration (required if LLM_PROVIDER is 'openai')
 OPENAI_API_KEY="your-openai-api-key"
+GPT_MODEL="gpt-4o-mini"  # Optional: OpenAI model name (default: 'gpt-4o-mini')
+
+# Ollama Configuration (required if LLM_PROVIDER is 'ollama')
+OLLAMA_MODEL="llama2"  # Optional: Ollama model name (default: 'llama2')
 ```
 
 ### Environment Variables Explained
@@ -42,14 +50,10 @@ OPENAI_API_KEY="your-openai-api-key"
 - **GOOGLE_CLIENT_ID** & **GOOGLE_CLIENT_SECRET**: OAuth credentials from [Google Cloud Console](https://console.cloud.google.com/). Create OAuth 2.0 credentials and add `http://localhost:3000/api/auth/callback/google/signin` as an authorized redirect URI.
 - **OAUTH_CODE_VERIFIER**: Code verifier for OAuth PKCE flow. Generate a secure random string.
 - **NEXT_PUBLIC_SITE_URL**: The public URL of your application. Use `http://localhost:3000` for local development.
-- **OPENAI_API_KEY**: Your OpenAI API key from [OpenAI Platform](https://platform.openai.com/api-keys). Required for AI-powered features.
-
-### Optional Environment Variables
-
-```env
-# For local development with Ollama (currently commented out in code)
-OLLAMA_MODEL="llama2"
-```
+- **LLM_PROVIDER**: Choose which LLM provider to use. Set to `'openai'` (default) to use OpenAI, or `'ollama'` to use a local Ollama instance.
+- **OPENAI_API_KEY**: Your OpenAI API key from [OpenAI Platform](https://platform.openai.com/api-keys). Required when `LLM_PROVIDER="openai"`.
+- **GPT_MODEL**: OpenAI model name to use (e.g., `gpt-4o-mini`, `gpt-4o`, `gpt-4-turbo`). Defaults to `gpt-4o-mini` if not set.
+- **OLLAMA_MODEL**: Ollama model name to use (e.g., `llama2`, `llama3`, `mistral`). Defaults to `llama2` if not set. Required when `LLM_PROVIDER="ollama"`.
 
 ## Getting Started
 
@@ -139,10 +143,17 @@ bunx prisma studio
 - Ensure `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are correct
 - Check that `OAUTH_CODE_VERIFIER` is set
 
-### OpenAI API Issues
+### LLM Provider Issues
 
-- Verify `OPENAI_API_KEY` is set and valid
+**OpenAI:**
+- Verify `OPENAI_API_KEY` is set and valid when using `LLM_PROVIDER="openai"`
 - Check your OpenAI account has sufficient credits/quota
+- Ensure `GPT_MODEL` matches an available model in your OpenAI account
+
+**Ollama:**
+- Ensure Ollama is installed and running locally when using `LLM_PROVIDER="ollama"`
+- Verify the model specified in `OLLAMA_MODEL` is downloaded: `ollama pull <model-name>`
+- Check Ollama is accessible at the default endpoint (usually `http://localhost:11434`)
 
 ## Learn More
 

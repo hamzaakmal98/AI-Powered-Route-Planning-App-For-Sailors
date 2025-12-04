@@ -1,23 +1,44 @@
 'use client';
 
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMapEvents, Polyline, useMap } from 'react-leaflet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { MapPin, Navigation, X, Search, Loader2, Trash2, Edit2, GripVertical } from 'lucide-react';
 import { toast } from 'sonner';
-import L from 'leaflet';
 
-// Import Leaflet CSS
-import 'leaflet/dist/leaflet.css';
-
-// Fix default marker icon issue with webpack/Next.js
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
-});
+// Lazy load Leaflet components to avoid SSR issues
+// These will be loaded only on the client side
+const loadLeaflet = async () => {
+  if (typeof window === 'undefined') return null;
+  
+  const [reactLeaflet, leaflet] = await Promise.all([
+    import('react-leaflet'),
+    import('leaflet')
+  ]);
+  
+  // Import CSS
+  await import('leaflet/dist/leaflet.css');
+  
+  const L = leaflet.default;
+  
+  // Fix default marker icon issue with webpack/Next.js
+  delete (L.Icon.Default.prototype as any)._getIconUrl;
+  L.Icon.Default.mergeOptions({
+    iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+    iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+  });
+  
+  return {
+    MapContainer: reactLeaflet.MapContainer,
+    TileLayer: reactLeaflet.TileLayer,
+    Marker: reactLeaflet.Marker,
+    Popup: reactLeaflet.Popup,
+    Polyline: reactLeaflet.Polyline,
+    useMapEvents: reactLeaflet.useMapEvents,
+    useMap: reactLeaflet.useMap,
+  };
+};
 
 // Export MapLocation interface for use in other components
 export interface MapLocation {
@@ -45,11 +66,14 @@ interface MarineMapProps {
 }
 
 // Component to update map view when location changes
-function MapViewUpdater({ center, zoom }: { center: [number, number]; zoom: number }) {
+function MapViewUpdater({ center, zoom, useMap }: { center: [number, number]; zoom: number; useMap: any }) {
+  if (!useMap) return null;
   const map = useMap();
   
   useEffect(() => {
-    map.setView(center, zoom);
+    if (map) {
+      map.setView(center, zoom);
+    }
   }, [map, center, zoom]);
   
   return null;
@@ -59,14 +83,18 @@ function MapViewUpdater({ center, zoom }: { center: [number, number]; zoom: numb
 function MapClickHandler({ 
   onLocationSelect, 
   onWaypointAdd, 
-  mode 
+  mode,
+  useMapEvents
 }: { 
   onLocationSelect?: (location: MapLocation) => void;
   onWaypointAdd?: (waypoint: MapLocation) => void;
   mode?: 'select' | 'waypoint' | 'route' | 'edit';
+  useMapEvents: any;
 }) {
+  if (!useMapEvents) return null;
+  
   useMapEvents({
-    click: (e) => {
+    click: (e: any) => {
       const { lat, lng } = e.latlng;
       
       if (mode === 'select' && onLocationSelect) {
@@ -96,6 +124,8 @@ function DraggableWaypointMarker({
   onNameUpdate,
   onDelete,
   editable,
+  Marker: MarkerComp,
+  Popup: PopupComp,
 }: {
   waypoint: MapLocation;
   index: number;
@@ -103,11 +133,13 @@ function DraggableWaypointMarker({
   onNameUpdate?: (name: string) => void;
   onDelete: () => void;
   editable: boolean;
+  Marker: any;
+  Popup: any;
 }) {
   const [isDragging, setIsDragging] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editedName, setEditedName] = useState(waypoint.name);
-  const markerRef = useRef<L.Marker>(null);
+  const markerRef = useRef<any>(null);
 
   // Update edited name when waypoint changes
   useEffect(() => {
@@ -131,14 +163,16 @@ function DraggableWaypointMarker({
     [onDragEnd]
   );
 
+  if (!MarkerComp || !PopupComp) return null;
+
   return (
-    <Marker
+    <MarkerComp
       draggable={editable}
       position={[waypoint.lat, waypoint.lng]}
       eventHandlers={eventHandlers}
       ref={markerRef}
     >
-      <Popup>
+      <PopupComp>
         <div className="text-sm min-w-[200px]">
           {isEditing ? (
             <div className="space-y-2">
@@ -210,8 +244,8 @@ function DraggableWaypointMarker({
             </>
           )}
         </div>
-      </Popup>
-    </Marker>
+      </PopupComp>
+    </MarkerComp>
   );
 }
 
@@ -231,12 +265,22 @@ function LeafletMapInternal({
   destination,
   editable = false,
 }: MarineMapProps) {
+  const [leafletComponents, setLeafletComponents] = useState<any>(null);
   const [selectedLocation, setSelectedLocation] = useState<MapLocation | null>(initialLocation || null);
   const [useNauticalCharts, setUseNauticalCharts] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<MapLocation[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showSearchResults, setShowSearchResults] = useState(false);
+
+  // Load Leaflet components on client side only
+  useEffect(() => {
+    loadLeaflet().then(components => {
+      if (components) {
+        setLeafletComponents(components);
+      }
+    });
+  }, []);
   
   // Use lazy initializer to avoid calling Math.random during render
   const mapIdRef = useRef<string | null>(null);
@@ -427,6 +471,17 @@ function LeafletMapInternal({
     return null;
   }, [selectedLocation, searchResults]);
 
+  // Destructure components for easier use
+  const {
+    MapContainer: MapContainerComp,
+    TileLayer: TileLayerComp,
+    Marker: MarkerComp,
+    Popup: PopupComp,
+    Polyline: PolylineComp,
+    useMap: useMapHook,
+    useMapEvents: useMapEventsHook,
+  } = leafletComponents || {};
+
   return (
     <div className="w-full">
       {/* Search bar */}
@@ -494,15 +549,20 @@ function LeafletMapInternal({
       </div>
       
       <div className="relative rounded-lg border border-border overflow-hidden" style={{ height }}>
-        <MapContainer
-          key={mapIdRef.current}
-          center={mapCenter}
-          zoom={mapZoom}
-          style={{ height: '100%', width: '100%' }}
-          className="z-0"
-        >
+        {!leafletComponents || !MapContainerComp ? (
+          <div className="flex items-center justify-center h-full bg-muted/50">
+            <div className="text-muted-foreground">Loading map...</div>
+          </div>
+        ) : (
+          <MapContainerComp
+            key={mapIdRef.current}
+            center={mapCenter}
+            zoom={mapZoom}
+            style={{ height: '100%', width: '100%' }}
+            className="z-0"
+          >
           {/* Base map layer - OpenStreetMap */}
-          <TileLayer
+          <TileLayerComp
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url={osmTileUrl}
             opacity={useNauticalCharts ? 0.7 : 1}
@@ -510,7 +570,7 @@ function LeafletMapInternal({
           
           {/* Nautical charts overlay (OpenSeaMap) */}
           {useNauticalCharts && (
-            <TileLayer
+            <TileLayerComp
               attribution='&copy; <a href="https://www.openseamap.org">OpenSeaMap</a> contributors'
               url={nauticalTileUrl}
               opacity={0.8}
@@ -519,7 +579,7 @@ function LeafletMapInternal({
 
           {/* Map view updater for search results */}
           {searchViewCenter && (
-            <MapViewUpdater center={searchViewCenter} zoom={12} />
+            <MapViewUpdater center={searchViewCenter} zoom={12} useMap={useMapHook} />
           )}
 
           {/* Map click handler */}
@@ -527,40 +587,41 @@ function LeafletMapInternal({
             onLocationSelect={handleLocationSelect}
             onWaypointAdd={handleWaypointAdd}
             mode={mode}
+            useMapEvents={useMapEventsHook}
           />
 
           {/* Departure marker */}
           {departure && (
-            <Marker position={[departure.lat, departure.lng]}>
-              <Popup>
+            <MarkerComp position={[departure.lat, departure.lng]}>
+              <PopupComp>
                 <div className="text-sm">
                   <div className="font-semibold">Departure: {departure.name}</div>
                   <div className="text-xs text-muted-foreground mt-1">
                     {departure.lat.toFixed(4)}, {departure.lng.toFixed(4)}
                   </div>
                 </div>
-              </Popup>
-            </Marker>
+              </PopupComp>
+            </MarkerComp>
           )}
 
           {/* Destination marker */}
           {destination && (
-            <Marker position={[destination.lat, destination.lng]}>
-              <Popup>
+            <MarkerComp position={[destination.lat, destination.lng]}>
+              <PopupComp>
                 <div className="text-sm">
                   <div className="font-semibold">Destination: {destination.name}</div>
                   <div className="text-xs text-muted-foreground mt-1">
                     {destination.lat.toFixed(4)}, {destination.lng.toFixed(4)}
                   </div>
                 </div>
-              </Popup>
-            </Marker>
+              </PopupComp>
+            </MarkerComp>
           )}
 
           {/* Selected location marker */}
           {selectedLocation && !departure && !destination && (
-            <Marker position={[selectedLocation.lat, selectedLocation.lng]}>
-              <Popup>
+            <MarkerComp position={[selectedLocation.lat, selectedLocation.lng]}>
+              <PopupComp>
                 <div className="text-sm">
                   <div className="font-semibold">{selectedLocation.name}</div>
                   {selectedLocation.country && (
@@ -570,8 +631,8 @@ function LeafletMapInternal({
                     {selectedLocation.lat.toFixed(4)}, {selectedLocation.lng.toFixed(4)}
                   </div>
                 </div>
-              </Popup>
-            </Marker>
+              </PopupComp>
+            </MarkerComp>
           )}
 
           {/* Waypoint markers - draggable if editable */}
@@ -587,12 +648,14 @@ function LeafletMapInternal({
                   onNameUpdate={(name) => handleWaypointNameUpdate(index, name)}
                   onDelete={() => handleWaypointDelete(index)}
                   editable={isEditable}
+                  Marker={MarkerComp}
+                  Popup={PopupComp}
                 />
               );
             }
             return (
-              <Marker key={`waypoint-${index}`} position={[waypoint.lat, waypoint.lng]}>
-                <Popup>
+              <MarkerComp key={`waypoint-${index}`} position={[waypoint.lat, waypoint.lng]}>
+                <PopupComp>
                   <div className="text-sm">
                     <div className="font-semibold">{waypoint.name}</div>
                     <div className="text-xs text-muted-foreground mt-1">
@@ -602,21 +665,22 @@ function LeafletMapInternal({
                       {waypoint.lat.toFixed(4)}, {waypoint.lng.toFixed(4)}
                     </div>
                   </div>
-                </Popup>
-              </Marker>
+                </PopupComp>
+              </MarkerComp>
             );
           })}
 
           {/* Route polyline */}
           {routePoints.length > 1 && (
-            <Polyline
+            <PolylineComp
               positions={routePoints}
               color="#3b82f6"
               weight={3}
               opacity={0.7}
             />
           )}
-        </MapContainer>
+        </MapContainerComp>
+        )}
       </div>
 
       {/* Selected location info */}

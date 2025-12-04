@@ -4,6 +4,21 @@ import {openai} from "@ai-sdk/openai";
 
 export const maxDuration = 30;
 
+// Get GPT model name from environment variable, default to gpt-4o-mini
+const GPT_MODEL = process.env.GPT_MODEL || 'gpt-4o-mini';
+// Get Ollama model name from environment variable, default to llama2
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama2';
+// Determine which LLM provider to use: 'ollama' or 'openai' (default: 'openai')
+const LLM_PROVIDER = (process.env.LLM_PROVIDER || 'openai').toLowerCase();
+
+// Helper function to get the appropriate model based on LLM_PROVIDER env var
+function getModel() {
+  if (LLM_PROVIDER === 'ollama') {
+    return ollama(OLLAMA_MODEL);
+  }
+  return openai(GPT_MODEL);
+}
+
 const systemPrompt = `
 You are First Mate, Knot Ready's friendly sailing preparation assistant. You're here to help sailors get ready for their adventures with warmth, encouragement, and sailing expertise.
 
@@ -36,7 +51,7 @@ export async function POST(req: Request) {
     const modelMessages = convertToModelMessages(messages);
 
     const result = streamText({
-      model: process.env.NODE_ENV == "production" ? openai("gpt-4o-mini") : /*ollama(process.env.OLLAMA_MODEL!)*/ openai("gpt-4o-mini"),
+      model: getModel(),
       system: systemPrompt,
       messages: modelMessages,
       temperature: 0.6,
