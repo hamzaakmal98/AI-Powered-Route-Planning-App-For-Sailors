@@ -71,7 +71,7 @@ export default function LandingPage() {
             <div className="flex flex-col gap-4 sm:flex-row sm:justify-center">
               <Button size="lg" className="text-base" asChild>
                 <Link href="/login">
-                Get Your Roadmap
+                Get Start Now
                 <ArrowRight className="ml-2 h-4 w-4" />
                 </Link>
               </Button>
@@ -158,7 +158,7 @@ export default function LandingPage() {
                 </div>
                 <CardTitle className="text-2xl">Progressive Skill Tree Framework</CardTitle>
                 <CardDescription className="text-base">
-                  Your adaptive roadmap across all seven preparation domains
+                  Your adaptive roadmap across all five preparation domains
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -234,12 +234,12 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Seven Domains */}
+      {/* Five Domains */}
       <section className="py-24 sm:py-32 bg-muted/30">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="mx-auto max-w-2xl text-center mb-16">
             <h2 className="mb-4 text-3xl font-bold tracking-tight sm:text-4xl">
-              All Seven Preparation Domains
+              All Five Preparation Domains
             </h2>
             <p className="text-lg text-muted-foreground">
               Sailing preparation spans multiple complex areas. We map them all.
@@ -250,10 +250,8 @@ export default function LandingPage() {
               { icon: Shield, title: "Boat Maintenance", difficulty: "2.81/5", description: "Keep your vessel seaworthy and reliable" },
               { icon: Target, title: "Budget Management", description: "Plan and track expenses for your journey" },
               { icon: Compass, title: "Weather Routing", description: "Navigate safely with weather intelligence" },
-              { icon: TrendingUp, title: "Skill Building", description: "Progressive skill development across all areas" },
               { icon: Route, title: "Passage Planning", description: "Plan routes, waypoints, and navigation" },
               { icon: Zap, title: "Safety Systems", description: "Emergency procedures and safety equipment" },
-              { icon: Calendar, title: "Timeline Management", description: "Coordinate preparation with your departure date" },
             ].map((domain, index) => (
               <Card key={index}>
                 <CardHeader>
@@ -305,7 +303,7 @@ export default function LandingPage() {
                 </div>
                 <h3 className="mb-3 text-xl font-semibold">Get Your Next 3-5 Priorities</h3>
                 <p className="text-muted-foreground">
-                  Our skill tree framework analyzes all seven domains and reveals exactly
+                  Our skill tree framework analyzes all five domains and reveals exactly
                   what you should focus on next—no overwhelm, no guesswork.
                 </p>
               </div>

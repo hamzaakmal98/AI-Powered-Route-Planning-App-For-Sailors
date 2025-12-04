@@ -20,11 +20,13 @@ export async function ExtractUserIdFromCookie(c: Context): Promise<string | null
   const {JWT_COOKIE_NAME} = env<{ JWT_COOKIE_NAME: string }>(c);
   const jwtCookie = getCookie(c, JWT_COOKIE_NAME);
   if (!jwtCookie) {
+    console.log("Cookie not found.");
     return null;
   }
 
   const payload = await verifyToken(jwtCookie);
   if (!payload) {
+    console.log("invalid cookie payload.");
     return null;
   }
 

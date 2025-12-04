@@ -2,14 +2,13 @@
 
 import {useChat} from '@ai-sdk/react';
 import {DefaultChatTransport} from 'ai';
-import {useCallback, useEffect, useRef, useState} from 'react';
+import {useCallback, useEffect, useRef, useState, memo} from 'react';
 import {useRouter} from 'next/navigation';
 
 import {FormType} from '@/app/api/onboarding/schema';
 import {honoClient} from '@/lib/hono-client';
 import {
   BoatInfoForm,
-  ConcernsForm,
   GoalsForm,
   JourneyPlanForm,
   SailingExperienceForm,
@@ -29,7 +28,7 @@ import {
 import {Loader} from '@/components/ai-elements/loader';
 import {Button} from '@/components/ui/button';
 import {Avatar, AvatarFallback} from '@/components/ui/avatar';
-import {Anchor} from 'lucide-react';
+import {Anchor, Brain, Loader2} from 'lucide-react';
 
 const FORM_COMPONENTS: Record<FormType, React.FC<OnboardingFormProps<any>>> = {
   boat_info: BoatInfoForm,
@@ -37,7 +36,6 @@ const FORM_COMPONENTS: Record<FormType, React.FC<OnboardingFormProps<any>>> = {
   journey_plan: JourneyPlanForm,
   timeline: TimelineForm,
   goals_priorities: GoalsForm,
-  concerns_challenges: ConcernsForm,
 };
 
 const ASSISTANT_NAME = 'First Mate';
@@ -80,16 +78,59 @@ const FORM_SUMMARIES: Record<FormType, { title: string; fields: Array<{ name: st
     title: 'Goals & priorities',
     fields: [
       {name: 'primaryGoals', label: 'Primary goals'},
-      {name: 'biggestChallenge', label: 'Biggest challenge'},
     ],
   },
-  concerns_challenges: {
-    title: 'Concerns',
-    fields: [
-      {name: 'mainConcerns', label: 'Top concerns'},
-      {name: 'additionalConcerns', label: 'Extra notes'},
-    ],
-  },
+};
+
+const GREETING_TEXT =
+  "Hi there! I'm " +
+  ASSISTANT_NAME +
+  ", and I'm thrilled to be your sailing preparation companion. I'll be with you every step of the way—from planning your journey to helping you stay on track as you prepare. Together, we'll make sure you're ready for the adventure ahead!";
+
+const GREETING_SUBTEXT =
+  "Let's start by letting me know more about you. This will only take a few minutes, and I'll be right here with you throughout. Ready to begin?";
+
+type TypewriterTextProps = {
+  text: string;
+  className?: string;
+  onComplete?: () => void;
+};
+
+const TypewriterText = ({ text, className, onComplete }: TypewriterTextProps) => {
+  const [visibleChars, setVisibleChars] = useState(0);
+
+  // Reset when text or start flag changes
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setVisibleChars(0);
+  }, [text]);
+
+  useEffect(() => {
+    if (visibleChars >= text.length) {
+      if (onComplete) {
+        onComplete();
+      }
+      return;
+    }
+
+    const id = typeof window !== 'undefined'
+      ? window.setInterval(() => {
+          setVisibleChars((prev) => Math.min(prev + 2, text.length));
+        }, 20)
+      : null;
+
+    return () => {
+      if (id !== null) {
+        window.clearInterval(id);
+      }
+    };
+  }, [visibleChars, text.length, onComplete]);
+
+  return (
+    <p className={className} aria-label={text}>
+      <span aria-hidden="true">{text.slice(0, visibleChars)}</span>
+    </p>
+  );
 };
 
 export default function OnboardingPage() {
@@ -97,6 +138,9 @@ export default function OnboardingPage() {
   const [collectedData, setCollectedData] = useState<Record<string, any>>({});
   const [currentFormType, setCurrentFormType] = useState<FormType | null>(null);
   const [isOnboardingComplete, setIsOnboardingComplete] = useState(false);
+  const [isOnboardingFailed, setIsOnboardingFailed] = useState(false);
+  const [isGreetingDone, setIsGreetingDone] = useState(false);
+  const [isGreetingSubtextDone, setIsGreetingSubtextDone] = useState(false);
   const [onboardingError, setOnboardingError] = useState<string | null>(null);
 
   const collectedDataRef = useRef(collectedData);
@@ -121,6 +165,7 @@ export default function OnboardingPage() {
     async (formValues: Record<string, any>) => {
       try {
         setOnboardingError(null);
+        setIsOnboardingFailed(false);
         const response = await honoClient.api.user.onboarded.$post({
           json: {formsData: formValues},
         });
@@ -134,6 +179,8 @@ export default function OnboardingPage() {
       } catch (err) {
         console.error('Error marking as onboarded:', err);
         setOnboardingError('Unable to finish onboarding right now. Please try again.');
+        setIsOnboardingFailed(true);
+        setCurrentFormType(null); // Stop showing forms
       }
     },
     [router],
@@ -141,14 +188,13 @@ export default function OnboardingPage() {
 
   // Parse messages to get form type and completion status
   useEffect(() => {
-    if (isOnboardingComplete) {
+    if (isOnboardingComplete || isOnboardingFailed) {
       return;
     }
 
     // Check all assistant messages, starting from the most recent
     for (let i = messages.length - 1; i >= 0; i--) {
       const message = messages[i];
-      if (i == messages.length-1) console.log(message);
       if (message && message.role === 'assistant') {
         // Extract text from message parts
         const textParts = message.parts?.filter((part: any) => part.type === 'text') || [];
@@ -157,7 +203,7 @@ export default function OnboardingPage() {
         // Try to parse JSON from anywhere in the message (not just the end)
         // Look for JSON objects that contain either "formType" or "action" (for completion)
         let jsonMatch = fullText.match(/\{[\s\S]*"(?:formType|action)"[\s\S]*\}/);
-        
+
         // If no match found, try checking the last line (common pattern for AI responses)
         if (!jsonMatch) {
           const lines = fullText.split('\n');
@@ -166,14 +212,11 @@ export default function OnboardingPage() {
             jsonMatch = [lastLine];
           }
         }
-        
-        if (i == messages.length-1) console.log(jsonMatch);
+
         if (jsonMatch) {
           try {
             const jsonData = JSON.parse(jsonMatch[0]);
-            console.log(jsonData);
             if (jsonData.action === 'showForm' && jsonData.formType) {
-              console.log('Setting form type:', jsonData.formType);
               setCurrentFormType(jsonData.formType as FormType);
               return; // Found a form type, stop searching
             } else if (jsonData.action === 'complete') {
@@ -188,7 +231,7 @@ export default function OnboardingPage() {
         }
       }
     }
-  }, [messages, markAsOnboarded, isOnboardingComplete]);
+  }, [messages, markAsOnboarded, isOnboardingComplete, isOnboardingFailed]);
 
   const FormComponent = currentFormType ? FORM_COMPONENTS[currentFormType] : null;
 
@@ -201,6 +244,11 @@ export default function OnboardingPage() {
    * @param values - The values collected from the form.
    */
   const handleFormSubmit = (type: FormType) => (values: Record<string, any>) => {
+    // Stop processing if onboarding has failed
+    if (isOnboardingFailed) {
+      return;
+    }
+
     const updatedData = {...collectedData, ...values};
     setCollectedData(updatedData);
     // Don't clear form type immediately - let the AI response set the next one
@@ -225,64 +273,117 @@ export default function OnboardingPage() {
     sendMessage({text: "Let's get started!"});
   };
 
-  const renderMessage = (message: any, index: number) => {
-    // Check if this message contains form submission data
-    // We'll look for messages that start with "I've completed the"
-    const isFormSubmission = message.parts?.some(
-      (part: any) => part.type === 'text' && part.text.includes("I've completed the"),
-    );
 
-    if (isFormSubmission) {
-      // Extract form type from message text
-      const text = message.parts?.find((p: any) => p.type === 'text')?.text || '';
-      const formTypeMatch = Object.keys(FORM_SUMMARIES).find((type) =>
-        text.includes(FORM_SUMMARIES[type as FormType].title),
-      );
-
-      if (formTypeMatch) {
-        const meta = FORM_SUMMARIES[formTypeMatch as FormType];
-        const formData = collectedData;
-        const formatValue = (value: any) => {
-          if (Array.isArray(value)) {
-            return value.length ? value.join(', ') : 'Not provided';
-          }
-          return value && value !== '' ? String(value) : 'Not provided';
-        };
-
-        return (
-          <Message key={message.id || index} from="user">
-            <MessageContent>
-              <MessageResponse>{text.split('\n')[0]}</MessageResponse>
-              <div className="mt-3 rounded-2xl border bg-muted/20 p-4">
-                <div className="mb-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  {meta.title}
-                </div>
-                <div className="space-y-1 text-sm">
-                  {meta.fields.map((field) => (
-                    <div className="flex justify-between gap-3" key={field.name}>
-                      <span className="text-muted-foreground">{field.label}</span>
-                      <span className="font-medium text-right">
-                        {formatValue(formData[field.name])}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </MessageContent>
-          </Message>
-        );
-      }
+  // Component to render reasoning parts - only show while streaming
+  // Memoized to prevent unnecessary re-renders that cause flashing
+  const ReasoningPart = memo(({ part, index }: { part: any; index: number }) => {
+    const isStreaming = part.state === 'streaming';
+    
+    // Only render if streaming, hide when done
+    if (!isStreaming) {
+      return null;
     }
 
-    // Regular message rendering
-    const textParts = message.parts?.filter((part: any) => part.type === 'text') || [];
-    let messageText = textParts.map((part: any) => part.text).join('');
+    return (
+      <div className="mt-3 rounded-lg border border-primary/20 bg-primary/5 overflow-hidden">
+        <div className="w-full flex items-center justify-between px-3 py-2.5">
+          <div className="flex items-center gap-2.5">
+            <div className="relative flex-shrink-0">
+              <Brain className="h-4 w-4 text-primary" />
+            </div>
+            <span className="text-xs font-semibold text-primary">
+              First Mate is thinking...
+            </span>
+            <Loader2 className="h-3 w-3 text-primary animate-spin flex-shrink-0" />
+          </div>
+        </div>
+        <div className="px-3 pb-3 pt-2 border-t border-primary/10">
+          <div className="text-xs text-muted-foreground font-mono whitespace-pre-wrap break-words leading-relaxed">
+            {part.text}
+            <span className="inline-block w-2 h-3 bg-primary/40 animate-pulse ml-1.5" />
+          </div>
+        </div>
+      </div>
+    );
+  }, (prevProps, nextProps) => {
+    // Only re-render if the text content or streaming state changes
+    return prevProps.part.text === nextProps.part.text && 
+           prevProps.part.state === nextProps.part.state;
+  });
 
-    // Remove JSON metadata from displayed message (keep it for parsing but don't show it)
-    messageText = messageText.replace(/\{[\s\S]*"formType"[\s\S]*\}/g, '').replace(/\{[\s\S]*"action"[\s\S]*"complete"[\s\S]*\}/g, '').trim();
+  const renderMessage = (message: any, index: number) => {
+    // Only process user messages for form submissions
+    if (message.role === 'user') {
+      // Check if this message contains form submission data
+      // We'll look for messages that start with "I've completed the"
+      const textParts = message.parts?.filter((part: any) => part.type === 'text') || [];
+      const messageText = textParts.map((part: any) => part.text).join('');
+      const isFormSubmission = messageText.includes("I've completed the");
 
-    // For assistant messages, include avatar
+      if (isFormSubmission) {
+        // Extract form type from message text
+        const formTypeMatch = Object.keys(FORM_SUMMARIES).find((type) =>
+          messageText.includes(FORM_SUMMARIES[type as FormType].title),
+        );
+
+        if (formTypeMatch) {
+          const meta = FORM_SUMMARIES[formTypeMatch as FormType];
+          const formData = collectedData;
+          const formatValue = (value: any) => {
+            if (Array.isArray(value)) {
+              return value.length ? value.join(', ') : 'Not provided';
+            }
+            return value && value !== '' ? String(value) : 'Not provided';
+          };
+
+          return (
+            <Message key={message.id || index} from="user">
+              <MessageContent>
+                <MessageResponse>{messageText.split('\n')[0]}</MessageResponse>
+                <div className="mt-3 rounded-2xl border bg-muted/20 p-4">
+                  <div className="mb-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                    {meta.title}
+                  </div>
+                  <div className="space-y-1 text-sm">
+                    {meta.fields.map((field) => (
+                      <div className="flex justify-between gap-3" key={field.name}>
+                        <span className="text-muted-foreground">{field.label}</span>
+                        <span className="font-medium text-right">
+                          {formatValue(formData[field.name])}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </MessageContent>
+            </Message>
+          );
+        }
+        // If form type not matched, fall through to render as regular message
+      }
+
+      // Regular user message (not a form submission)
+      // messageText already extracted above
+      return (
+        <Message key={message.id || index} from={message.role}>
+          <MessageContent>
+            {messageText && <MessageResponse>{messageText}</MessageResponse>}
+          </MessageContent>
+        </Message>
+      );
+    }
+
+    // Assistant message rendering
     if (message.role === 'assistant') {
+      const textParts = message.parts?.filter((part: any) => part.type === 'text') || [];
+      // Only show reasoning parts that are currently streaming
+      const reasoningParts = message.parts?.filter((part: any) => part.type === 'reasoning' && part.state === 'streaming') || [];
+
+      let messageText = textParts.map((part: any) => part.text).join('');
+
+      // Remove JSON metadata from displayed message (keep it for parsing but don't show it)
+      messageText = messageText.replace(/\{[\s\S]*"formType"[\s\S]*\}/g, '').replace(/\{[\s\S]*"action"[\s\S]*"complete"[\s\S]*\}/g, '').trim();
+
       return (
         <div key={message.id || index} className="flex items-start gap-3 w-full">
           <Avatar className="size-8 shrink-0">
@@ -292,6 +393,15 @@ export default function OnboardingPage() {
           </Avatar>
           <Message from={message.role} className="flex-1">
             <MessageContent>
+              {/* Render reasoning parts first (only if streaming) - only for assistant messages */}
+              {reasoningParts.length > 0 && (
+                <div className="mb-3 space-y-2">
+                  {reasoningParts.map((part: any, idx: number) => (
+                    <ReasoningPart key={`reasoning-${idx}`} part={part} index={idx} />
+                  ))}
+                </div>
+              )}
+              {/* Render text content */}
               {messageText && <MessageResponse>{messageText}</MessageResponse>}
             </MessageContent>
           </Message>
@@ -299,13 +409,8 @@ export default function OnboardingPage() {
       );
     }
 
-    return (
-      <Message key={message.id || index} from={message.role}>
-        <MessageContent>
-          {messageText && <MessageResponse>{messageText}</MessageResponse>}
-        </MessageContent>
-      </Message>
-    );
+    // Fallback for any other message types
+    return null;
   };
 
   return (
@@ -313,16 +418,27 @@ export default function OnboardingPage() {
       <Conversation className="flex-1">
         <ConversationContent className="mx-auto max-w-4xl px-4 py-6">
           <div className="mb-6 space-y-6 text-center">
+            <div className="flex items-center justify-center gap-2 mb-4">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                <Anchor className="h-5 w-5" />
+              </div>
+            </div>
             <div className="space-y-3">
               <h1 className="text-3xl font-semibold tracking-tight">Welcome to Knot Ready!</h1>
-              <p className="text-lg text-muted-foreground">
-                Hi there! I&apos;m {ASSISTANT_NAME}, and I&apos;m thrilled to be your sailing preparation companion. I&apos;ll be with you every step of the way—from planning your journey to helping you stay on track as you prepare. Together, we&apos;ll make sure you&apos;re ready for the adventure ahead!
-              </p>
-              <p className="text-muted-foreground">
-                Let&apos;s start by getting to know you and your boat. This will only take a few minutes, and I&apos;ll be right here with you throughout. Ready to begin?
-              </p>
+              <TypewriterText
+                text={GREETING_TEXT}
+                className="text-lg text-muted-foreground"
+                onComplete={() => setIsGreetingDone(true)}
+              />
+              {isGreetingDone && (
+                <TypewriterText
+                  text={GREETING_SUBTEXT}
+                  className="text-muted-foreground"
+                  onComplete={() => setIsGreetingSubtextDone(true)}
+                />
+              )}
             </div>
-            {messages.length === 0 && (
+            {messages.length === 0 && isGreetingDone && isGreetingSubtextDone && (
               <Button
                 onClick={handleGetStarted}
                 size="lg"
@@ -332,9 +448,9 @@ export default function OnboardingPage() {
               </Button>
             )}
           </div>
-          {messages.map((message, index) => renderMessage(message, index))}
+          {messages.map((message, index) => renderMessage(message, index)).filter(Boolean)}
 
-          {FormComponent && !isOnboardingComplete && currentFormType && status === 'ready' && (
+          {FormComponent && !isOnboardingComplete && !isOnboardingFailed && currentFormType && status === 'ready' && (
             <div className="mt-4">
               <FormComponent
                 key={currentFormType}
@@ -344,25 +460,12 @@ export default function OnboardingPage() {
             </div>
           )}
 
-          {/* not provide stop option now as it onboarding process is fast */}
-          {/*{(status === 'submitted' || status === 'streaming') && (*/}
-          {/*  <Message from="assistant">*/}
-          {/*    <MessageContent>*/}
-          {/*      <div className="flex items-center gap-2 text-muted-foreground">*/}
-          {/*        <Loader size={16}/>*/}
-          {/*        <span className="text-sm">Assistant is thinking…</span>*/}
-          {/*      </div>*/}
-          {/*      <Button*/}
-          {/*        variant="ghost"*/}
-          {/*        size="sm"*/}
-          {/*        className="mt-2"*/}
-          {/*        onClick={() => stop()}*/}
-          {/*      >*/}
-          {/*        Stop*/}
-          {/*      </Button>*/}
-          {/*    </MessageContent>*/}
-          {/*  </Message>*/}
-          {/*)}*/}
+          {(status === 'submitted' || status === 'streaming') && !isOnboardingComplete && !isOnboardingFailed && (
+            <div className="mt-4 flex items-center gap-2 text-muted-foreground text-sm">
+              <Loader size={16} />
+              <span>First Mate is charting your next step…</span>
+            </div>
+          )}
 
           {error && (
             <div className="flex items-start gap-3 w-full">
@@ -395,7 +498,11 @@ export default function OnboardingPage() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => markAsOnboarded(collectedDataRef.current)}
+                      onClick={() => {
+                        setIsOnboardingFailed(false);
+                        setOnboardingError(null);
+                        markAsOnboarded(collectedDataRef.current);
+                      }}
                     >
                       Try again
                     </Button>

@@ -16,31 +16,23 @@ datasource db {
 
 // User model with journey and boat information
 model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  name      String?
-  password  String? // Hashed password for email/password authentication
-  onboarded Boolean  @default(false)
+  id             String   @id @default(uuid())
+  email          String   @unique
+  name           String?
+  password       String? // Hashed password for email/password authentication
+  onboarded      Boolean  @default(false)
   onboardingData Json?
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  // // Journey and boat information
-  // boatType        String?
-  // boatLength      Float?
-  // experienceLevel String? // e.g., "Beginner", "Intermediate", "Advanced"
-  // journeyPlan     String? // Description of planned journey
-  // departureDate   DateTime? // Target departure date
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
 
   // Relations
-  // connect oauth accounts
-  accounts Account[]
-  // tasks            Task[]
-  // domainProgress   DomainProgress[]
-  // executionLevels  ExecutionLevel[]
-  // executionRecords ExecutionRecord[]
-  // // activities       Activity[]
-  // verifications    Verification[]
+  accounts              Account[]
+  boatMaintenanceTasks  BoatMaintenanceTask[]  @relation("BoatMaintenanceTasks")
+  weatherRoutingTasks   WeatherRoutingTask[]   @relation("WeatherRoutingTasks")
+  safetySystemsTasks    SafetySystemsTask[]    @relation("SafetySystemsTasks")
+  budgetManagementTasks BudgetManagementTask[] @relation("BudgetManagementTasks")
+  passagePlanningTasks  PassagePlanningTask[]  @relation("PassagePlanningTasks")
+  domainProgress        DomainProgress[]
 
   @@map("users")
 }
@@ -63,175 +55,213 @@ model Account {
   @@map("accounts")
 }
 
-// // Preparation domains (Boat Maintenance, Budget Management, etc.)
-// enum DomainType {
-//   BOAT_MAINTENANCE
-//   BUDGET_MANAGEMENT
-//   WEATHER_ROUTING
-//   SKILL_BUILDING
-//   PASSAGE_PLANNING
-//   SAFETY_SYSTEMS
-//   TIMELINE_MANAGEMENT
-// }
-//
-// // Task status
-// enum TaskStatus {
-//   LOCKED
-//   READY
-//   IN_PROGRESS
-//   COMPLETED
-// }
-//
-// // Domain progress tracking
-// model DomainProgress {
-//   id         Int        @id @default(autoincrement())
-//   userId     String
-//   user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-//   domain     DomainType
-//   progress   Int        @default(0) // 0-100 percentage
-//   difficulty String? // e.g., "2.81/5" for Boat Maintenance
-//   updatedAt  DateTime   @updatedAt
-//
-//   @@unique([userId, domain])
-//   @@index([userId])
-// }
-//
-// // Tasks/Priorities - the next 3-5 priorities for the user
-// model Task {
-//   id     Int    @id @default(autoincrement())
-//   userId String
-//   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-//
-//   // Task details
-//   title       String
-//   description String?
-//   domain      DomainType
-//   priority    Int // 1-5, where 1 is highest priority
-//   status      TaskStatus @default(LOCKED)
-//   progress    Int        @default(0) // 0-100 percentage
-//
-//   // Time estimates
-//   estimatedTime String? // e.g., "2-3 hours", "1 day"
-//
-//   // Task metadata
-//   createdAt   DateTime  @default(now())
-//   updatedAt   DateTime  @updatedAt
-//   startedAt   DateTime?
-//   completedAt DateTime?
-//
-//   @@index([userId, priority])
-//   @@index([userId, status])
-//   @@index([userId, domain])
-// }
-//
-// // Execution levels (Day Sails, Overnights, Multi-day Passages)
-// enum ExecutionLevelType {
-//   DAY_SAILS
-//   OVERNIGHTS
-//   MULTI_DAY_PASSAGES
-// }
-//
-// // Execution progress tracking
-// model ExecutionLevel {
-//   id         Int                @id @default(autoincrement())
-//   userId     String
-//   user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-//   level      ExecutionLevelType
-//   unlocked   Boolean            @default(false)
-//   required   Int // Number of executions required
-//   completed  Int                @default(0)
-//   unlockedAt DateTime?
-//   createdAt  DateTime           @default(now())
-//   updatedAt  DateTime           @updatedAt
-//
-//   // Relations
-//   records ExecutionRecord[]
-//
-//   @@unique([userId, level])
-//   @@index([userId])
-// }
-//
-// // Individual execution records (each day sail, overnight, etc.)
-// model ExecutionRecord {
-//   id               Int            @id @default(autoincrement())
-//   userId           String
-//   user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-//   executionLevelId Int
-//   executionLevel   ExecutionLevel @relation(fields: [executionLevelId], references: [id], onDelete: Cascade)
-//
-//   // Record details
-//   title       String?
-//   description String?
-//   date        DateTime
-//   location    String?
-//
-//   // Verification
-//   verified   Boolean   @default(false)
-//   verifiedAt DateTime?
-//
-//   createdAt DateTime @default(now())
-//   updatedAt DateTime @updatedAt
-//
-//   // Relations
-//   verifications Verification[]
-//
-//   @@index([userId])
-//   @@index([executionLevelId])
-// }
-//
-// // Verification submissions (photos/videos)
-// model Verification {
-//   id                Int              @id @default(autoincrement())
-//   userId            String
-//   user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-//   executionRecordId Int?
-//   executionRecord   ExecutionRecord? @relation(fields: [executionRecordId], references: [id], onDelete: Cascade)
-//
-//   // Verification details
-//   type        String // "photo" or "video"
-//   url         String // URL to the uploaded file
-//   description String?
-//
-//   // Status
-//   approved   Boolean   @default(false)
-//   approvedAt DateTime?
-//
-//   createdAt DateTime @default(now())
-//   updatedAt DateTime @updatedAt
-//
-//   @@index([userId])
-//   @@index([executionRecordId])
-// }
-//
-// // Activity log for recent activity section
-// enum ActivityType {
-//   TASK_COMPLETED
-//   TASK_STARTED
-//   TASK_UNLOCKED
-//   EXECUTION_COMPLETED
-//   EXECUTION_UNLOCKED
-//   VERIFICATION_SUBMITTED
-//   VERIFICATION_APPROVED
-//   ACHIEVEMENT_UNLOCKED
-//   DOMAIN_PROGRESS_UPDATED
-// }
+// Task status enum
+enum TaskStatus {
+  locked
+  ready
+  in_progress
+  completed
 
-// model Activity {
-//   id     Int    @id @default(autoincrement())
-//   userId String
-//   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-//
-//   type        ActivityType
-//   title       String // e.g., "Completed", "Unlocked", "Started"
-//   description String // e.g., "Engine service checklist"
-//
-//   // Related entity IDs (optional)
-//   taskId           Int?
-//   domain           DomainType?
-//   executionLevelId Int?
-//
-//   createdAt DateTime @default(now())
-//
-//   @@index([userId])
-//   @@index([userId, createdAt])
-// }
+  @@map("task_status")
+}
+
+// Base task fields - common to all domain-specific task tables
+// Each domain-specific task table will have these fields plus domain-specific fields
+
+// Boat Maintenance tasks
+model BoatMaintenanceTask {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation("BoatMaintenanceTasks", fields: [userId], references: [id], onDelete: Cascade)
+
+  // Task details
+  task          String // Task description
+  priority      Int // 1-5, where 1 is highest priority
+  estimatedTime String? // e.g., "2-3 hours", "1 day"
+  status        TaskStatus @default(ready)
+  progress      Int        @default(0) // 0-100 percentage
+
+  // Timestamps
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  startedAt   DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+
+  @@index([userId, priority])
+  @@index([userId, status])
+  @@map("boat_maintenance_tasks")
+}
+
+// Weather Routing tasks
+model WeatherRoutingTask {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation("WeatherRoutingTasks", fields: [userId], references: [id], onDelete: Cascade)
+
+  // Task details
+  task          String // Task description
+  priority      Int // 1-5, where 1 is highest priority
+  estimatedTime String? // e.g., "2-3 hours", "1 day"
+  status        TaskStatus @default(ready)
+  progress      Int        @default(0) // 0-100 percentage
+
+  // Timestamps
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  startedAt   DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+
+  @@index([userId, priority])
+  @@index([userId, status])
+  @@map("weather_routing_tasks")
+}
+
+// Safety Systems tasks
+model SafetySystemsTask {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation("SafetySystemsTasks", fields: [userId], references: [id], onDelete: Cascade)
+
+  // Task details
+  task          String // Task description
+  priority      Int // 1-5, where 1 is highest priority
+  estimatedTime String? // e.g., "2-3 hours", "1 day"
+  status        TaskStatus @default(ready)
+  progress      Int        @default(0) // 0-100 percentage
+
+  // Timestamps
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  startedAt   DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+
+  @@index([userId, priority])
+  @@index([userId, status])
+  @@map("safety_systems_tasks")
+}
+
+// Budget Management tasks
+model BudgetManagementTask {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation("BudgetManagementTasks", fields: [userId], references: [id], onDelete: Cascade)
+
+  // Task details
+  task          String // Task description
+  priority      Int // 1-5, where 1 is highest priority
+  estimatedTime String? // e.g., "2-3 hours", "1 day"
+  status        TaskStatus @default(ready)
+  progress      Int        @default(0) // 0-100 percentage
+
+  // Timestamps
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  startedAt   DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+
+  @@index([userId, priority])
+  @@index([userId, status])
+  @@map("budget_management_tasks")
+}
+
+// Passage Planning tasks - merged with Route (one task = one route)
+model PassagePlanningTask {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation("PassagePlanningTasks", fields: [userId], references: [id], onDelete: Cascade)
+
+  // Task details
+  task          String // Task description (focused on route planning activities)
+  priority      Int // 1-5, where 1 is highest priority
+  estimatedTime String? // e.g., "2-3 hours", "1 day"
+  status        TaskStatus @default(ready)
+  progress      Int        @default(0) // 0-100 percentage
+
+  // Route information (merged from Route table)
+  routeName            String? // Optional route name
+  departurePort        String? // Departure port name
+  departureLat         Float? // Departure latitude
+  departureLng         Float? // Departure longitude
+  departureDate        String? // Departure date (ISO format: yyyy-MM-dd)
+  destinationPort      String? // Destination port name
+  destinationLat       Float? // Destination latitude
+  destinationLng       Float? // Destination longitude
+  totalDistance        Float? // Total distance in nautical miles
+  routeEstimatedTime   String? // Estimated passage time (e.g., "21 days")
+  routeStatus          String  @default("planning") // planning, in_progress, completed
+  routeData            Json? // Store waypoints, courses, tidal data, etc.
+
+  // Timestamps
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  startedAt   DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+
+  // Relations
+  waypoints Waypoint[]
+  checklistItems ChecklistItem[]
+
+  @@index([userId, priority])
+  @@index([userId, status])
+  @@index([userId, routeStatus])
+  @@map("passage_planning_tasks")
+}
+
+// Domain progress tracking
+model DomainProgress {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String // Domain name: Boat Maintenance, Weather Routing, etc.
+  progress  Int      @default(0) // 0-100 percentage
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@map("domain_progress")
+}
+
+model Waypoint {
+  id                    String               @id @default(uuid())
+  passagePlanningTaskId String // Link to Passage Planning task (required - routes are merged into tasks)
+  passagePlanningTask   PassagePlanningTask  @relation(fields: [passagePlanningTaskId], references: [id], onDelete: Cascade)
+
+  // Waypoint information
+  name      String // Waypoint name
+  latitude  Float // Latitude
+  longitude Float // Longitude
+  sequence  Int // Order in the route (1, 2, 3, ...)
+
+  // Navigation data
+  course   Float? // Course to next waypoint (degrees)
+  distance Float? // Distance to next waypoint (nautical miles)
+  notes    String? // Additional notes about this waypoint
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([passagePlanningTaskId])
+  @@index([passagePlanningTaskId, sequence])
+  @@map("waypoints")
+}
+
+model ChecklistItem {
+  id                    String               @id @default(uuid())
+  passagePlanningTaskId String // Link to Passage Planning task
+  passagePlanningTask   PassagePlanningTask  @relation(fields: [passagePlanningTaskId], references: [id], onDelete: Cascade)
+
+  // Checklist item information
+  category String // Category name (e.g., "REGULATORY COMPLIANCE", "ROUTE PLANNING")
+  label    String // Item label (e.g., "Visas/Permits & Entry Visas")
+  checked  Boolean @default(false) // Whether the item is checked
+  sequence Int // Order within category
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([passagePlanningTaskId])
+  @@index([passagePlanningTaskId, category, sequence])
+  @@map("checklist_items")
+}
