@@ -195,10 +195,10 @@ export default function DashboardPage() {
 
   // Use generated tasks data or fallback to empty structure
   const allPriorities = tasksData?.priorities || [];
-  
+
   // Filter tasks by status
-  const priorities = statusFilter === 'all' 
-    ? allPriorities 
+  const priorities = statusFilter === 'all'
+    ? allPriorities
     : allPriorities.filter(task => task.status === statusFilter);
 
   // Icon mapping for domains
@@ -515,7 +515,7 @@ export default function DashboardPage() {
                 Preparation Domains
               </h2>
               <p className="text-muted-foreground">
-                Your progress across all seven areas
+                Your progress across all areas
               </p>
             </div>
           </div>
