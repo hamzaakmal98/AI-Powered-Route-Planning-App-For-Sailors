@@ -1,5 +1,5 @@
 import { streamText, UIMessage, convertToModelMessages } from 'ai';
-import { ollama } from 'ollama-ai-provider-v2';
+import { ollama } from 'ai-sdk-ollama';
 import {openai} from "@ai-sdk/openai";
 
 export const maxDuration = 30;
@@ -48,7 +48,7 @@ Remember: You're First Mate - be friendly, encouraging, and use sailing terminol
 export async function POST(req: Request) {
   try {
     const { messages }: { messages: UIMessage[] } = await req.json();
-    const modelMessages = convertToModelMessages(messages);
+    const modelMessages = await convertToModelMessages(messages);
 
     const result = streamText({
       model: getModel(),

@@ -2,7 +2,7 @@ import {Hono} from 'hono'
 import {prisma} from "@/lib/prisma";
 import {ExtractUserIdFromCookie} from "@/server/hono/routes/utils";
 import {generateText} from 'ai';
-import {ollama} from 'ollama-ai-provider-v2';
+import {ollama} from 'ai-sdk-ollama';
 import {openai} from "@ai-sdk/openai";
 
 // Get GPT model name from environment variable, default to gpt-4o-mini
@@ -647,7 +647,7 @@ Calculate a reasonable incremental increase (0-15%) for completing this task. Re
         if (jsonMatch) {
           const progressData = JSON.parse(jsonMatch[0]) as Record<string, number>
           const increase = progressData["increase"] || progressData["increment"] || progressData["Passage Planning"]
-          
+
           // Handle both incremental increase and absolute value (for backward compatibility)
           let calculatedProgress: number
           if (increase <= 15) {
@@ -662,7 +662,7 @@ Calculate a reasonable incremental increase (0-15%) for completing this task. Re
           // Additional safety: cap the increase at 15% maximum
           const maxIncrease = Math.min(15, 100 - currentProgress)
           calculatedProgress = Math.min(100, currentProgress + maxIncrease)
-          
+
           if (calculatedProgress >= 0 && calculatedProgress <= 100) {
             // Update domain progress
             await prisma.domainProgress.upsert({
@@ -689,7 +689,7 @@ Calculate a reasonable incremental increase (0-15%) for completing this task. Re
         // Fallback: use a conservative default increase of 8%
         const fallbackIncrease = Math.min(8, 100 - currentProgress)
         const fallbackProgress = Math.min(100, currentProgress + fallbackIncrease)
-        
+
         await prisma.domainProgress.upsert({
           where: {
             userId_name: {

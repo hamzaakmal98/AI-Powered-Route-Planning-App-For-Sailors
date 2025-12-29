@@ -1,5 +1,5 @@
-import { Experimental_Agent as Agent, tool, stepCountIs, validateUIMessages } from 'ai';
-import { ollama } from 'ollama-ai-provider-v2';
+import { ToolLoopAgent, tool, stepCountIs, createAgentUIStreamResponse } from 'ai';
+import { ollama } from 'ai-sdk-ollama';
 import { openai } from '@ai-sdk/openai';
 import { prisma } from '@/lib/prisma';
 import { verifyToken } from '@/lib/jwt';
@@ -60,7 +60,7 @@ function getUserContextToolFactory(userId: string) {
           if (onboardingData.boatLength) context.onboarding.boatLength = onboardingData.boatLength;
           if (onboardingData.boatName) context.onboarding.boatName = onboardingData.boatName;
           if (onboardingData.boatAge) context.onboarding.boatAge = onboardingData.boatAge;
-          
+
           // Sailing experience
           if (onboardingData.experienceLevel) context.onboarding.experienceLevel = onboardingData.experienceLevel;
           if (Array.isArray(onboardingData.certifications) && onboardingData.certifications.length > 0) {
@@ -68,12 +68,12 @@ function getUserContextToolFactory(userId: string) {
           }
           if (onboardingData.mechanicalSkills) context.onboarding.mechanicalSkills = onboardingData.mechanicalSkills;
           if (onboardingData.longestPassage) context.onboarding.longestPassage = onboardingData.longestPassage;
-          
+
           // Journey planning
           if (onboardingData.journeyType) context.onboarding.journeyType = onboardingData.journeyType;
           if (onboardingData.primaryDestination) context.onboarding.primaryDestination = onboardingData.primaryDestination;
           if (onboardingData.journeyDuration) context.onboarding.journeyDuration = onboardingData.journeyDuration;
-          
+
           // Timeline
           if (onboardingData.departureDate) context.onboarding.departureDate = onboardingData.departureDate;
           if (onboardingData.preparationTimeline) context.onboarding.preparationTimeline = onboardingData.preparationTimeline;
@@ -82,12 +82,12 @@ function getUserContextToolFactory(userId: string) {
           if (onboardingData.timeline && !context.onboarding.preparationTimeline) {
             context.onboarding.preparationTimeline = onboardingData.timeline;
           }
-          
+
           // Goals and priorities
           if (Array.isArray(onboardingData.primaryGoals) && onboardingData.primaryGoals.length > 0) {
             context.onboarding.primaryGoals = onboardingData.primaryGoals;
           }
-          
+
           // Concerns (legacy support)
           if (Array.isArray(onboardingData.mainConcerns) && onboardingData.mainConcerns.length > 0) {
             context.onboarding.mainConcerns = onboardingData.mainConcerns;
@@ -151,6 +151,8 @@ function createTaskToolFactory(userId: string) {
       routeName: z.string().optional().describe('Optional name for the route (for Passage Planning)'),
       departureDate: z.string().optional().describe('Departure date in ISO format (yyyy-MM-dd) for Passage Planning'),
     }),
+    // Human-in-the-loop: Require approval before creating tasks (except Passage Planning which is guided)
+    needsApproval: async ({ domain }) => domain === 'Passage Planning',
     execute: async ({ domain, task, priority, estimatedTime, departurePort, departureLat, departureLng, destinationPort, destinationLat, destinationLng, routeName, departureDate }) => {
       try {
         const modelName = getTaskModelForDomain(domain);
@@ -908,19 +910,37 @@ function createChecklistToolFactory(userId: string) {
   });
 }
 
-function createTaskAgent(
-  getUserContextTool: ReturnType<typeof getUserContextToolFactory>,
-  createTaskTool: ReturnType<typeof createTaskToolFactory>,
-  saveRouteTool: ReturnType<typeof saveRouteToolFactory>,
-  addWaypointTool: ReturnType<typeof addWaypointToolFactory>,
-  getRouteDataTool: ReturnType<typeof getRouteDataToolFactory>,
-  generateRouteTool: ReturnType<typeof generateRouteToolFactory>,
-  updateDepartureDateTool: ReturnType<typeof updateDepartureDateToolFactory>,
-  createChecklistTool: ReturnType<typeof createChecklistToolFactory>
-) {
-  return new Agent({
-    model: getModel(),
-    system: `You are First Mate, Knot Ready's friendly sailing preparation assistant. You're here to help users generate and refine their preparation tasks through interactive conversation, and guide them through route planning.
+// Create the task agent with dynamic tool configuration
+// Tools are configured at runtime based on the userId passed via call options
+//
+// SECURITY NOTE: Why userId is passed via prepareCall, not in tool inputSchema:
+// - Security: userId comes from the authenticated JWT, not the LLM. Putting it in
+//   inputSchema would let the LLM control which user's data to access/modify.
+// - Reliability: No risk of LLM forgetting, hallucinating, or being prompt-injected
+//   to use a different userId.
+// - Clean separation: Auth/identity is handled server-side; LLM only deals with
+//   business logic (domain, description, etc.).
+const taskAgent = new ToolLoopAgent({
+  model: getModel(),
+  // Define the call options schema - userId will be passed at runtime from the JWT
+  callOptionsSchema: z.object({
+    userId: z.string().describe('The authenticated user ID'),
+  }),
+  // Use prepareCall to securely inject userId into tools without LLM involvement
+  prepareCall: ({ options, ...settings }) => ({
+    ...settings,
+    tools: {
+      getUserContext: getUserContextToolFactory(options.userId),
+      createTask: createTaskToolFactory(options.userId),
+      getRouteData: getRouteDataToolFactory(options.userId),
+      saveRoute: saveRouteToolFactory(options.userId),
+      addWaypoint: addWaypointToolFactory(options.userId),
+      generateRoute: generateRouteToolFactory(options.userId),
+      updateDepartureDate: updateDepartureDateToolFactory(options.userId),
+      createChecklist: createChecklistToolFactory(options.userId),
+    },
+  }),
+  instructions: `You are First Mate, Knot Ready's friendly sailing preparation assistant. You're here to help users generate and refine their preparation tasks through interactive conversation, and guide them through route planning.
 
 **CRITICAL RULE - JSON ACTIONS:**
 - When you call 'createChecklist', you MUST output JSON immediately after: {"action": "showChecklist", "taskId": "[taskId]", "checklist": [...]}
@@ -1229,20 +1249,22 @@ DEPARTURE DATE SELECTOR ACTION:
 - Example: "I've created a comprehensive checklist for your passage from Lisbon to Bridgetown.
 {"action": "showChecklist", "taskId": "task-123", "checklist": [{"category": "REGULATORY COMPLIANCE", "items": [{"id": "item-1", "label": "Visas/Permits & Entry Visas", "checked": false}]}, ...]}"
 - **DO NOT** skip this step - the checklist component will not appear without this JSON output.`,
-    tools: {
-      getUserContext: getUserContextTool,
-      createTask: createTaskTool,
-      getRouteData: getRouteDataTool,
-      saveRoute: saveRouteTool,
-      addWaypoint: addWaypointTool,
-      generateRoute: generateRouteTool,
-      updateDepartureDate: updateDepartureDateTool,
-      createChecklist: createChecklistTool,
-    },
-    stopWhen: stepCountIs(10), // Allow up to 10 steps for tool calling
-    temperature: 0.7,
-  });
-}
+  // Initial tools with placeholder userId - these provide schemas for message parsing.
+  // The actual implementations with real userId are injected via prepareCall at runtime.
+  // Note: These placeholder tools are never executed; prepareCall replaces them before execution.
+  tools: {
+    getUserContext: getUserContextToolFactory(''),
+    createTask: createTaskToolFactory(''),
+    getRouteData: getRouteDataToolFactory(''),
+    saveRoute: saveRouteToolFactory(''),
+    addWaypoint: addWaypointToolFactory(''),
+    generateRoute: generateRouteToolFactory(''),
+    updateDepartureDate: updateDepartureDateToolFactory(''),
+    createChecklist: createChecklistToolFactory(''),
+  },
+  stopWhen: stepCountIs(10), // Allow up to 10 steps for tool calling
+  temperature: 0.7,
+});
 
 export async function POST(req: Request) {
   try {
@@ -1293,37 +1315,16 @@ export async function POST(req: Request) {
       return true;
     });
 
-    // Create the tools with userId access
-    const getUserContextTool = getUserContextToolFactory(userId);
-    const createTaskTool = createTaskToolFactory(userId);
-    const saveRouteTool = saveRouteToolFactory(userId);
-    const addWaypointTool = addWaypointToolFactory(userId);
-    const getRouteDataTool = getRouteDataToolFactory(userId);
-    const generateRouteTool = generateRouteToolFactory(userId);
-    const updateDepartureDateTool = updateDepartureDateToolFactory(userId);
-    const createChecklistTool = createChecklistToolFactory(userId);
-
-    // Create a new agent instance with the tools
-    const taskAgent = createTaskAgent(
-      getUserContextTool,
-      createTaskTool,
-      saveRouteTool,
-      addWaypointTool,
-      getRouteDataTool,
-      generateRouteTool,
-      updateDepartureDateTool,
-      createChecklistTool
-    );
-
-    // Validate messages (using deduplicated messages)
-    const validatedMessages = await validateUIMessages({ messages: uniqueMessages });
-
-    // Use agent.respond() to handle UI messages and return streaming response
-    // The agent can now use getUserContext tool to fetch user information when needed
+    // Use createAgentUIStreamResponse with dynamic tool configuration
+    // Tools are configured at runtime via prepareCall using the userId from options
     try {
-      return await taskAgent.respond({
-        messages: validatedMessages as any,
-
+      return createAgentUIStreamResponse({
+        agent: taskAgent,
+        uiMessages: uniqueMessages,
+        // Pass userId as a call option - this triggers prepareCall to configure tools
+        options: {
+          userId,
+        },
       });
     } catch (agentError: any) {
       // Handle specific OpenAI API errors related to response retrieval

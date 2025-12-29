@@ -1,12 +1,12 @@
 'use client';
 
 import { useChat } from '@ai-sdk/react';
-import { DefaultChatTransport } from 'ai';
+import { DefaultChatTransport, lastAssistantMessageIsCompleteWithApprovalResponses } from 'ai';
 import React, { useState, useEffect, useCallback, useRef, memo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Anchor, X, CopyIcon, RefreshCcwIcon, ArrowDown, Loader2, ArrowRight, ExternalLink, AlertCircle, SquareIcon, Brain } from 'lucide-react';
+import { Anchor, X, CopyIcon, RefreshCcwIcon, ArrowDown, Loader2, ArrowRight, ExternalLink, AlertCircle, SquareIcon, Brain, CheckCircle2, XCircle } from 'lucide-react';
 import Link from 'next/link';
 import { Streamdown } from 'streamdown';
 import { StickToBottom, useStickToBottomContext } from 'use-stick-to-bottom';
@@ -82,12 +82,15 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
   const [isSubmittingDomain, setIsSubmittingDomain] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const stopRef = useRef<(() => void) | null>(null);
-  const { messages, sendMessage, status, error, regenerate, stop } = useChat({
+  const { messages, sendMessage, status, error, regenerate, stop, addToolApprovalResponse } = useChat({
     transport: new DefaultChatTransport({
       api: '/api/tasks',
     }),
+    // Automatically continue the conversation after all tool approvals are handled
+    // This ensures the approval response is properly sent to the agent
+    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
   });
-  
+
   // Store stop function in ref to ensure we always have the latest version
   useEffect(() => {
     stopRef.current = stop || null;
@@ -396,7 +399,7 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
   // Memoized to prevent unnecessary re-renders that cause flashing
   const ReasoningPart = memo(({ part, index }: { part: any; index: number }) => {
     const isStreaming = part.state === 'streaming';
-    
+
     // Only render if streaming, hide when done
     if (!isStreaming) {
       return null;
@@ -425,8 +428,130 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
     );
   }, (prevProps, nextProps) => {
     // Only re-render if the text content or streaming state changes
-    return prevProps.part.text === nextProps.part.text && 
+    return prevProps.part.text === nextProps.part.text &&
            prevProps.part.state === nextProps.part.state;
+  });
+
+  // Component to render tool parts that need approval (human-in-the-loop pattern from AI SDK v6)
+  // Structure: { type: 'tool-{toolName}', state: 'approval-requested', input: object, approval: { id: string } }
+  const ToolApprovalRequestView = memo(({
+    approvalRequest,
+    addToolApprovalResponse: approvalFn,
+  }: {
+    approvalRequest: any;
+    addToolApprovalResponse: typeof addToolApprovalResponse;
+  }) => {
+    // Extract from the actual structure:
+    // - type: 'tool-createTask' -> toolName: 'createTask'
+    // - approval.id: the approval ID
+    // - input: the tool input
+    const approvalId = approvalRequest.approval?.id;
+    const toolName = approvalRequest.type?.replace(/^tool-/, '') || 'Unknown Tool';
+    const input = approvalRequest.input || {};
+
+    // Get a human-readable title for the tool
+    const getToolTitle = (name: string): string => {
+      switch (name) {
+        case 'createTask': return 'Create New Task';
+        case 'createChecklist': return 'Create Checklist';
+        case 'saveRoute': return 'Save Route';
+        default: return name.replace(/([A-Z])/g, ' $1').trim();
+      }
+    };
+
+    // Get relevant fields to display for each tool
+    const getDisplayFields = (name: string, toolInput: any): Array<{ label: string; value: string }> => {
+      const fields: Array<{ label: string; value: string }> = [];
+      const formatValue = (value: any): string => {
+        if (value === undefined || value === null) return '';
+        if (typeof value === 'object') return JSON.stringify(value, null, 2);
+        return String(value);
+      };
+
+      switch (name) {
+        case 'createTask':
+          if (toolInput.domain) fields.push({ label: 'Domain', value: toolInput.domain });
+          if (toolInput.task) fields.push({ label: 'Task', value: toolInput.task });
+          if (toolInput.priority) fields.push({ label: 'Priority', value: `${toolInput.priority} (${toolInput.priority === 1 ? 'Highest' : toolInput.priority === 5 ? 'Lowest' : 'Medium'})` });
+          if (toolInput.estimatedTime) fields.push({ label: 'Estimated Time', value: toolInput.estimatedTime });
+          break;
+        case 'createChecklist':
+          if (toolInput.checklist?.length) fields.push({ label: 'Categories', value: toolInput.checklist.map((c: any) => c.category).join(', ') });
+          break;
+        default:
+          Object.entries(toolInput).forEach(([key, value]) => {
+            if (value !== undefined && value !== null) {
+              fields.push({ label: key, value: formatValue(value) });
+            }
+          });
+      }
+      return fields;
+    };
+
+    const displayFields = getDisplayFields(toolName, input);
+
+    return (
+      <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/50 overflow-hidden shadow-sm">
+        <div className="w-full flex items-center justify-between px-4 py-3 bg-amber-100/50 dark:bg-amber-900/30 border-b border-amber-200 dark:border-amber-800">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-200 dark:bg-amber-800">
+              <AlertCircle className="h-4 w-4 text-amber-700 dark:text-amber-300" />
+            </div>
+            <div>
+              <span className="text-sm font-semibold text-amber-900 dark:text-amber-100">
+                Approval Required
+              </span>
+              <p className="text-xs text-amber-700 dark:text-amber-300">
+                {getToolTitle(toolName)}
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="px-4 py-3 space-y-3">
+          {displayFields.length > 0 && (
+            <div className="space-y-2">
+              {displayFields.map((field, idx) => (
+                <div key={idx} className="flex flex-col gap-0.5">
+                  <span className="text-xs font-medium text-amber-700 dark:text-amber-400">{field.label}</span>
+                  <span className="text-sm text-amber-900 dark:text-amber-100 break-words">{field.value}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex items-center gap-2 pt-2">
+            <Button
+              size="sm"
+              variant="default"
+              className="bg-green-600 hover:bg-green-700 text-white gap-1.5"
+              onClick={() => {
+                // Add the approval response - sendAutomaticallyWhen will trigger the agent
+                approvalFn({
+                  id: approvalId,
+                  approved: true,
+                });
+              }}
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              Approve
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-red-300 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-950 gap-1.5"
+              onClick={() => {
+                approvalFn({
+                  id: approvalId,
+                  approved: false,
+                });
+              }}
+            >
+              <XCircle className="h-4 w-4" />
+              Deny
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
   });
 
   const renderMessage = (message: any, index: number) => {
@@ -434,6 +559,22 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
       const textParts = message.parts?.filter((part: any) => part.type === 'text') || [];
       // Only show reasoning parts that are currently streaming
       const reasoningParts = message.parts?.filter((part: any) => part.type === 'reasoning' && part.state === 'streaming') || [];
+      // Find tool parts that need approval (human-in-the-loop pattern from AI SDK v6)
+      // Structure: { type: 'tool-{toolName}', state: 'approval-requested', input: object, approval: { id: string } }
+      const toolApprovalRequests = message.parts?.filter(
+        (part: any) => part.type?.startsWith('tool-') && part.state === 'approval-requested'
+      ) || [];
+
+      // Debug: Log tool approval requests for the latest message
+      if (toolApprovalRequests.length > 0 && index === messages.length - 1) {
+        console.log('[ToolApproval] Found approval-requested parts:', toolApprovalRequests.map((req: any) => ({
+          type: req.type,
+          state: req.state,
+          approvalId: req.approval?.id,
+          input: req.input,
+        })));
+      }
+
       let messageText = textParts.map((part: any) => part.text).join('');
 
       // Remove JSON metadata from displayed message (keep it for parsing but don't show it)
@@ -447,7 +588,7 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
 
       // Create a unique key combining message ID and index to avoid duplicate keys
       const uniqueKey = message.id ? `assistant-${message.id}-${index}` : `assistant-${index}`;
-      
+
       return (
         <div key={uniqueKey} className={cn("group flex items-start gap-4 w-full py-4 hover:bg-muted/20 transition-colors", fullPage ? "px-0" : "px-6")}>
           <Avatar className="size-8 shrink-0 mt-0.5 ring-2 ring-primary/10">
@@ -461,6 +602,18 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
               <div className="space-y-2">
                 {reasoningParts.map((part: any, idx: number) => (
                   <ReasoningPart key={`reasoning-${uniqueKey}-${idx}`} part={part} index={idx} />
+                ))}
+              </div>
+            )}
+            {/* Render tool approval requests (human-in-the-loop) */}
+            {toolApprovalRequests.length > 0 && (
+              <div className="space-y-2">
+                {toolApprovalRequests.map((approvalRequest: any, idx: number) => (
+                  <ToolApprovalRequestView
+                    key={`approval-${uniqueKey}-${idx}`}
+                    approvalRequest={approvalRequest}
+                    addToolApprovalResponse={addToolApprovalResponse}
+                  />
                 ))}
               </div>
             )}
@@ -698,7 +851,7 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
                 return true;
               });
 
-              return uniqueMessages.map((message, index) => {
+              return uniqueMessages.map((message: any, index: number) => {
                 // Filter out messages before domain selection
                 const messageTextParts = message.parts?.filter((part: any) => part.type === 'text') || [];
                 const messageText = messageTextParts.map((part: any) => part.text).join('');
@@ -711,14 +864,13 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
                 if (message.role === 'assistant' && messageText.includes("showDomainSelector") && !messageText.trim().replace(/\{[\s\S]*"action"[\s\S]*"showDomainSelector"[\s\S]*\}/g, '').trim()) {
                   return null;
                 }
-
                 const rendered = renderMessage(message, index);
-                
+
                 // If this message triggered the route display, render the route right after it
                 const shouldShowRoute = showRoute && routeData && routeMessageId === message.id;
                 // If this message triggered the checklist display, render the checklist right after it
                 const shouldShowChecklist = showChecklist && checklistData && checklistMessageId === message.id;
-                
+
                 return (
                   <React.Fragment key={message.id || `message-${index}`}>
                     {rendered}
@@ -755,8 +907,8 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
                             route={routeData.route}
                             departure={routeData.departure || routeData.route[0]}
                             destination={routeData.destination || routeData.route[routeData.route.length - 1]}
-                            waypoints={routeData.route.length > 2 
-                              ? routeData.route.slice(1, -1) 
+                            waypoints={routeData.route.length > 2
+                              ? routeData.route.slice(1, -1)
                               : []}
                             mode="route"
                             editable={true}
@@ -765,13 +917,13 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
                               // Update waypoint in route (index + 1 because first is departure)
                               if (routeData && routeData.route.length > index + 1) {
                                 const waypointToUpdate = routeData.route[index + 1];
-                                
+
                                 // Check if waypoint has an ID
                                 if (!waypointToUpdate.id) {
                                   toast.error('Cannot update waypoint: Missing waypoint ID. Please regenerate the route.');
                                   return;
                                 }
-                                
+
                                 // If waypoint has an ID, update it in the database
                                 if (waypointToUpdate.id) {
                                   try {
@@ -783,12 +935,12 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
                                         longitude: waypoint.lng,
                                       },
                                     });
-                                    
+
                                     if (!response.ok) {
                                       toast.error('Failed to update waypoint in database');
                                       return;
                                     }
-                                    
+
                                     const result = await response.json();
                                     if (result.success && result.waypoint) {
                                       // Update local state with the updated waypoint
@@ -801,7 +953,7 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
                                         ...routeData,
                                         route: updatedRoute,
                                       });
-                                      
+
                                       toast.success('Waypoint updated successfully');
                                     } else {
                                       toast.error('Failed to update waypoint');
@@ -838,13 +990,13 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
                               }
 
                               const waypointToDelete = routeData.route[index + 1];
-                              
+
                               // Check if waypoint has an ID
                               if (!waypointToDelete?.id) {
                                 toast.error('Cannot delete waypoint: Missing waypoint ID. Please regenerate the route.');
                                 return;
                               }
-                              
+
                               // If waypoint has an ID, delete it from the database
                               if (waypointToDelete?.id) {
                                 try {
@@ -853,14 +1005,14 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
                                       waypointId: waypointToDelete.id,
                                     },
                                   });
-                                  
+
                                   if (!response.ok) {
                                     const errorText = await response.text();
                                     console.error('Failed to delete waypoint:', response.status, errorText);
                                     toast.error('Failed to delete waypoint from database');
                                     return;
                                   }
-                                  
+
                                   const result = await response.json();
                                   if (result.success) {
                                     // Remove from local state
@@ -870,7 +1022,7 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
                                       ...routeData,
                                       route: updatedRoute,
                                     });
-                                    
+
                                     toast.success('Waypoint deleted successfully');
                                   } else {
                                     toast.error('Failed to delete waypoint');
@@ -905,7 +1057,7 @@ export function TaskChat({ onClose, onTaskAdded, fullPage = false }: TaskChatPro
                                   ...routeData,
                                   route: updatedRoute,
                                 });
-                                
+
                                 // Note: New waypoints added via map click will need to be saved via the agent
                                 // This is just for local display
                               }
