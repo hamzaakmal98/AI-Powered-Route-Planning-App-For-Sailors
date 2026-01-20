@@ -122,28 +122,29 @@ The application will be available at [http://localhost:3000](http://localhost:30
 - `src/server/` - Server-side code (Hono routes, actions)
 - `prisma/` - Database schema and migrations
 
-graph TD
-    User((Sailor)) -->|Interacts| UI[Next.js Frontend]
+```mermaid graph TD User((Sailor)) -->|Interacts| UI[Next.js Frontend]
     
-    subgraph "Next.js App (Server-Side)"
-        UI -->|Next.js Actions| Hono[Hono API Handlers]
-        Hono -->|Auth| Google[Google OAuth / JWT]
-        Hono -->|Database Operations| Prisma[Prisma ORM]
-    end
+subgraph "Next.js App (Server-Side)"
+    UI -->|Next.js Actions| Hono[Hono API Handlers]
+    Hono -->|Auth| Google[Google OAuth / JWT]
+    Hono -->|Database Operations| Prisma[Prisma ORM]
+end
 
-    subgraph "AI Reasoning Engine"
-        Hono -->|Query| AI_Router{Provider Selector}
-        AI_Router -->|Cloud| OpenAI[OpenAI GPT-4o-mini]
-        AI_Router -->|Local/Offline| Ollama[Local Ollama Instance]
-    end
+subgraph "AI Reasoning Engine"
+    Hono -->|Query| AI_Router{Provider Selector}
+    AI_Router -->|Cloud| OpenAI[OpenAI GPT-4o-mini]
+    AI_Router -->|Local/Offline| Ollama[Local Ollama Instance]
+end
 
-    subgraph "External Systems"
-        Prisma -->|Persists Data| Postgres[(PostgreSQL DB)]
-    end
+subgraph "External Systems"
+    Prisma -->|Persists Data| Postgres[(PostgreSQL DB)]
+end
 
-    style UI fill:#f9f,stroke:#333,stroke-width:2px
-    style Ollama fill:#bbf,stroke:#333,stroke-width:2px
-    style OpenAI fill:#bfb,stroke:#333,stroke-width:2px
+style UI fill:#0070f3,color:#fff,stroke:#333
+style Ollama fill:#ff5722,color:#fff,stroke:#333
+style OpenAI fill:#10a37f,color:#fff,stroke:#333
+
+```
 
 ## Database
 
