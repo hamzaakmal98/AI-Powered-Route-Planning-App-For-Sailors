@@ -122,6 +122,29 @@ The application will be available at [http://localhost:3000](http://localhost:30
 - `src/server/` - Server-side code (Hono routes, actions)
 - `prisma/` - Database schema and migrations
 
+graph TD
+    User((Sailor)) -->|Interacts| UI[Next.js Frontend]
+    
+    subgraph "Next.js App (Server-Side)"
+        UI -->|Next.js Actions| Hono[Hono API Handlers]
+        Hono -->|Auth| Google[Google OAuth / JWT]
+        Hono -->|Database Operations| Prisma[Prisma ORM]
+    end
+
+    subgraph "AI Reasoning Engine"
+        Hono -->|Query| AI_Router{Provider Selector}
+        AI_Router -->|Cloud| OpenAI[OpenAI GPT-4o-mini]
+        AI_Router -->|Local/Offline| Ollama[Local Ollama Instance]
+    end
+
+    subgraph "External Systems"
+        Prisma -->|Persists Data| Postgres[(PostgreSQL DB)]
+    end
+
+    style UI fill:#f9f,stroke:#333,stroke-width:2px
+    style Ollama fill:#bbf,stroke:#333,stroke-width:2px
+    style OpenAI fill:#bfb,stroke:#333,stroke-width:2px
+
 ## Database
 
 This project uses [Prisma](https://www.prisma.io) as the ORM. The schema is defined in `prisma/schema.prisma`.
