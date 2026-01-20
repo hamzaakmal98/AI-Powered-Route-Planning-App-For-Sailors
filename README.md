@@ -121,8 +121,11 @@ The application will be available at [http://localhost:3000](http://localhost:30
 - `src/lib/` - Utility libraries and client configurations
 - `src/server/` - Server-side code (Hono routes, actions)
 - `prisma/` - Database schema and migrations
+  
 
-```mermaid graph TD User((Sailor)) -->|Interacts| UI[Next.js Frontend]
+```mermaid
+
+graph TD User((Sailor)) -->|Interacts| UI[Next.js Frontend]
     
 subgraph "Next.js App (Server-Side)"
     UI -->|Next.js Actions| Hono[Hono API Handlers]
