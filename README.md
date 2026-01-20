@@ -11,6 +11,9 @@ Next-gen sailing readiness and passage planning suite. Powered by Next.js and a 
 
     🔐 Secure by Design: Full OAuth 2.0 integration and encrypted session handling.
 
+<video src="https://github.com/user-attachments/assets/588430dd-32b8-4fe2-8f31-816c899355c2" controls="controls" style="max-width: 100%;">
+</video>
+
 ## Prerequisites
 
 - [Bun](https://bun.sh) (package manager and runtime)
@@ -149,8 +152,7 @@ graph TD
     style OpenAI fill:#10a37f,color:#fff
 
 ```
-<video src="https://github.com/user-attachments/assets/588430dd-32b8-4fe2-8f31-816c899355c2" controls="controls" style="max-width: 100%;">
-</video>
+
 
 
 
