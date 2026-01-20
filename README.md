@@ -149,6 +149,11 @@ graph TD
     style OpenAI fill:#10a37f,color:#fff
 
 ```
+<video src="[YOUR_GENERATED_ASSET_LINK](https://github.com/user-attachments/assets/588430dd-32b8-4fe2-8f31-816c899355c2)" controls="controls" style="max-width: 100%;">
+</video>
+
+
+
 
 ## Database
 
