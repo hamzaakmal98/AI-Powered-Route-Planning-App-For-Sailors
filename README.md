@@ -123,27 +123,30 @@ The application will be available at [http://localhost:3000](http://localhost:30
 - `prisma/` - Database schema and migrations
   
 
-```mermaid graph TD User((Sailor)) --> UI[Next.js Frontend]
+```mermaid
 
-subgraph App_Server ["Next.js App (Server-Side)"]
-    UI --> Hono[Hono API Handlers]
-    Hono --> Google[Google OAuth / JWT]
-    Hono --> Prisma[Prisma ORM]
-end
+graph TD
+    User([Sailor]) --> UI[Next.js Frontend]
+    
+    subgraph App_Server [App Server-Side]
+        UI --> Hono[Hono API Handlers]
+        Hono --> Google[Google OAuth and JWT]
+        Hono --> Prisma[Prisma ORM]
+    end
 
-subgraph AI_Engine ["AI Reasoning Engine"]
-    Hono --> AI_Router{Provider Selector}
-    AI_Router --> OpenAI[OpenAI GPT-4o-mini]
-    AI_Router --> Ollama[Local Ollama Instance]
-end
+    subgraph AI_Engine [AI Reasoning Engine]
+        Hono --> AI_Router{Provider Selector}
+        AI_Router --> OpenAI[OpenAI GPT-4o-mini]
+        AI_Router --> Ollama[Local Ollama Instance]
+    end
 
-subgraph Storage ["External Systems"]
-    Prisma --> Postgres[(PostgreSQL DB)]
-end
+    subgraph Storage [Data Systems]
+        Prisma --> Postgres[(PostgreSQL Database)]
+    end
 
-style UI fill:#0070f3,color:#fff
-style Ollama fill:#ff5722,color:#fff
-style OpenAI fill:#10a37f,color:#fff
+    style UI fill:#0070f3,color:#fff
+    style Ollama fill:#ff5722,color:#fff
+    style OpenAI fill:#10a37f,color:#fff
 
 ```
 
