@@ -1,9 +1,7 @@
 # Knot Ready
 
-If you want a punchy summary for the sidebar of the repository, use this:
+Next-gen sailing readiness and passage planning suite. Powered by Next.js and a flexible AI engine (OpenAI/Ollama) for intelligent maritime safety.
 
-"Next-gen sailing readiness and passage planning suite. Powered by Next.js and a flexible AI engine (OpenAI/Ollama) for intelligent maritime safety."
-Key Features to Highlight in the README:
 
     🚢 Decision Support: AI-driven analysis of sailing conditions and crew readiness.
 
