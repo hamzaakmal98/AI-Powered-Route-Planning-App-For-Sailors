@@ -1,6 +1,17 @@
 # Knot Ready
 
-A Next.js application for sailing preparation and passage planning.
+If you want a punchy summary for the sidebar of the repository, use this:
+
+"Next-gen sailing readiness and passage planning suite. Powered by Next.js and a flexible AI engine (OpenAI/Ollama) for intelligent maritime safety."
+Key Features to Highlight in the README:
+
+    🚢 Decision Support: AI-driven analysis of sailing conditions and crew readiness.
+
+    📡 Edge AI Capability: Support for local LLMs via Ollama for offline use at sea.
+
+    ⚡ Modern Stack: Built with Next.js 15, Bun, Tailwind CSS, and Prisma.
+
+    🔐 Secure by Design: Full OAuth 2.0 integration and encrypted session handling.
 
 ## Prerequisites
 
